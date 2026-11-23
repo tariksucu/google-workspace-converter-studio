@@ -11,7 +11,7 @@
  */
 const CS_CONFIG = Object.freeze({
   /** This add-on's version (package.json says the same: test/package.test.mjs). */
-  version: '1.1.0',
+  version: '1.1.1',
   /** Names the add-on on its API calls (Converter Studio's statistics of its connectors). */
   clientName: 'google-workspace',
   /** The public API. A project editor can point a copy elsewhere (script property CS_API_BASE_URL). */
@@ -46,4 +46,40 @@ const CS_CONFIG = Object.freeze({
   catalogCacheSeconds: 6 * 3600,
   /** The folder in My Drive for results that have no folder of their own (Marketplace review rule). */
   driveFolderName: 'Converter Studio',
+  /**
+   * The permissions (OAuth scopes) of appsscript.json, by name. Google's consent screen lists each
+   * one with a box to tick, and a user may leave any of them unticked (granular consent).
+   */
+  scopes: Object.freeze({
+    gmail: 'https://www.googleapis.com/auth/gmail.addons.execute',
+    message: 'https://www.googleapis.com/auth/gmail.addons.current.message.action',
+    compose: 'https://www.googleapis.com/auth/gmail.addons.current.action.compose',
+    selection: 'https://www.googleapis.com/auth/drive.addons.metadata.readonly',
+    driveFile: 'https://www.googleapis.com/auth/drive.file',
+    fetch: 'https://www.googleapis.com/auth/script.external_request',
+    openid: 'openid',
+    email: 'https://www.googleapis.com/auth/userinfo.email',
+  }),
+  /**
+   * What each part of the add-on needs (names of `scopes`). Every entry point asks Google for the
+   * parts it uses before doing anything (Main.js), as Google recommends: the permissions of the
+   * flow at hand, not all of them, so a Gmail-only user is never asked about Drive.
+   */
+  needs: Object.freeze({
+    /** Any execution in Gmail. */
+    gmail: Object.freeze(['gmail']),
+    /**
+     * Anything sent to Converter Studio (UrlFetchApp), the formats list included; signing in, and
+     * every signed-in request, which may renew the sign-in with Google's identity token.
+     */
+    converterStudio: Object.freeze(['fetch', 'openid', 'email']),
+    /** The open message's attachments, read after a click. */
+    message: Object.freeze(['message']),
+    /** The reply draft with the converted file (made from the open message). */
+    reply: Object.freeze(['message', 'compose']),
+    /** The Drive items selected in Drive's side panel. */
+    selection: Object.freeze(['selection']),
+    /** A Drive file the user allowed (its bytes come through UrlFetchApp), and saving results. */
+    driveFiles: Object.freeze(['driveFile', 'fetch']),
+  }),
 });

@@ -39,7 +39,7 @@ test('Continue with Google beside an open message: a new free account, then the 
     ['/v1/account', `Bearer ${token}`],
   ]);
   const [exchange] = w.requests;
-  assert.equal(exchange.headers['X-Converter-Studio-Client'], 'google-workspace/1.1.0');
+  assert.equal(exchange.headers['X-Converter-Studio-Client'], 'google-workspace/1.1.1');
   assert.equal(w.api.state.exchanges[0].sub, '2002');
   assert.equal(w.api.state.accounts.get('2002').email, 'new@gmail.com');
 });
@@ -119,7 +119,8 @@ test('what can go wrong at sign-in is said plainly, and nothing is kept', () => 
     /already exists at converter\.studio, but the address isn't verified yet/,
   );
   w.api.state.notLinked.clear();
-  // Google refused the add-on the openid scope.
+  // Google gives no identity token although `openid` is allowed (without it, Google is asked:
+  // test/permissions.test.mjs).
   w.google.granted = false;
   assert.equal(
     notificationOf(w.click('onSignIn', gmailEvent())),

@@ -1,4 +1,4 @@
-/* global CsErrors, GmailApp */
+/* global CsErrors, GmailApp, CS_CONFIG */
 /* eslint @typescript-eslint/no-unused-vars: ["error", { "varsIgnorePattern": "^Cs[A-Z]" }] -- Apps Script shares top-level names across the project's files */
 
 /**
@@ -7,8 +7,12 @@
  * interaction"), so it reads nothing when a message is merely opened. Apps Script glue: GmailApp.
  */
 const CsGmail = (function () {
-  /** The message the event is about, with the event's temporary access token switched on. */
-  function openMessage(e) {
+  /**
+   * The message the event is about, with the event's temporary access token switched on.
+   * `checkPermission`: called when Gmail refused; ends the execution with Google's own permission
+   * card when the message permission was left unticked (Main.js).
+   */
+  function openMessage(e, checkPermission) {
     const gmail = e && e.gmail;
     if (!gmail || !gmail.messageId || !gmail.accessToken) throw new CsErrors.CsError('messageGone');
     let message;
@@ -16,7 +20,9 @@ const CsGmail = (function () {
       GmailApp.setCurrentMessageAccessToken(gmail.accessToken);
       message = GmailApp.getMessageById(gmail.messageId);
     } catch {
-      // A token from an older view of the message, or a message deleted meanwhile.
+      // A token from an older view of the message, or a message deleted meanwhile; or the
+      // permission to read the open message unticked on Google's consent screen.
+      if (checkPermission) checkPermission([CS_CONFIG.scopes.message]);
       message = null;
     }
     if (!message) throw new CsErrors.CsError('messageGone');

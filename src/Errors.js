@@ -81,5 +81,62 @@ const CsErrors = (function () {
     return new CsError('unknown');
   }
 
-  return { TEXT, CsError, asCsError };
+  /**
+   * Google's own exceptions that end an execution to ask the user for a permission
+   * (`ScriptApp.requireScopes`, thrown when a second look finds one missing: Main.js). Google
+   * shows its "Authorization required" card only if the exception reaches Apps Script, so every
+   * catch on its way lets it through (`passGoogleStop`). Known by identity, not by its text, which
+   * Google writes in the user's language.
+   */
+  const STOPS = [];
+
+  /** Marks Google's exception as one that must reach Apps Script; returns it unchanged. */
+  function googleStop(error) {
+    if (STOPS.indexOf(error) < 0) STOPS.push(error);
+    return error;
+  }
+
+  function isGoogleStop(error) {
+    return STOPS.indexOf(error) >= 0;
+  }
+
+  /** The first line of a catch that may see Google's exception: throws it on. */
+  function passGoogleStop(error) {
+    if (isGoogleStop(error)) throw error;
+  }
+
+  /**
+   * Text for the project's log: addresses without their query or fragment (upload and download
+   * links carry their own tokens there), and nothing shaped like a session, a key, an OAuth access
+   * token or an identity token.
+   */
+  function scrub(text) {
+    return String(text)
+      .replace(/(\bhttps?:\/\/[^\s?#"'<>]*)[?#][^\s"'<>]*/gi, '$1?…')
+      .replace(/\bBearer\s+\S+/gi, 'Bearer …')
+      .replace(/\bcvs_[A-Za-z0-9_-]+/g, 'cvs_…')
+      .replace(/\bya29\.[A-Za-z0-9._-]+/g, 'ya29.…')
+      .replace(/\beyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]*)?/g, '(token)');
+  }
+
+  /** A thrown value for the log: its name and message (or its stack), scrubbed, at most 2,000 characters. */
+  function describe(error, withStack) {
+    let text;
+    if (error && withStack && error.stack) text = String(error.stack);
+    else if (error && error.message !== undefined)
+      text = (error.name ? error.name + ': ' : '') + error.message;
+    else text = String(error);
+    return scrub(text).slice(0, 2000);
+  }
+
+  return {
+    TEXT,
+    CsError,
+    asCsError,
+    googleStop,
+    isGoogleStop,
+    passGoogleStop,
+    scrub,
+    describe,
+  };
 })();

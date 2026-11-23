@@ -178,6 +178,8 @@ export function fakeApi({
       const refuse = (reason) => fail(401, 'googleSignInFailed', SIGN_IN_FAILED, { reason });
       if (!claims) return refuse('malformed');
       if (claims.aud !== AUDIENCE) return refuse('audience');
+      // `azp`, when present, names the client that asked: ours (Apps Script leaves it out).
+      if (claims.azp !== undefined && claims.azp !== AUDIENCE) return refuse('audience');
       if (!(claims.exp * 1000 > clock.now)) return refuse('expired');
       if (!claims.email) return refuse('noEmail');
       if (claims.email_verified !== true) return refuse('emailUnverified');

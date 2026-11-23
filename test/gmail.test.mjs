@@ -165,7 +165,54 @@ test('a HEIC photo to JPG: download, save to Drive, reply with it attached', () 
   // No key on links that carry their own token.
   for (const r of w.requests.filter((x) => x.url.includes('/download') || x.method === 'PUT'))
     assert.equal(r.headers.Authorization, undefined);
-  assert.deepEqual(w.logs, []);
+  // One line about the reply draft for the project's log (what was attached, what the draft holds
+  // when read back): counts, sizes and the media type, never a file name or an address.
+  assert.deepEqual(w.logs, [
+    [
+      'log',
+      'Converter Studio add-on: reply draft made with 1 attachment, 30 bytes, application/octet-stream; read back: 1 attachment(s), 30 bytes, 1 recipient(s)',
+    ],
+  ]);
+});
+
+test('the reply draft: a bare media type on the file, and a draft that cannot be read back still goes out', () => {
+  const w = world();
+  // The download's Content-Type with a parameter, as a server may send for text.
+  const handler = w.api.handler;
+  w.api.handler = (request) => {
+    const answer = handler(request);
+    if (answer && request.url.includes('/download'))
+      answer.headers['Content-Type'] = 'text/plain; charset=utf-8';
+    return answer;
+  };
+  const done = cardOf(
+    w.click(
+      'onConvertAttachment',
+      gmailEvent({ params: { index: '1', hash: hashOf(w, 'm1', 1) }, inputs: { to: 'txt' } }),
+    ),
+  );
+  const reply = button(done, 'Reply with the file attached');
+  const composed = render(
+    w.click('onReplyWithResult', gmailEvent({ params: reply.compose.parameters })),
+  );
+  assert.equal(composed.kind, 'ComposeActionResponse');
+  assert.equal(w.gmail.drafts[0].attachments[0].contentType, 'text/plain');
+  assert.equal(w.gmail.drafts[0].attachments[0].name, 'scan.txt');
+  assert.match(
+    w.logs[0][1],
+    /made with 1 attachment, \d+ bytes, text\/plain; read back: 1 attachment\(s\), \d+ bytes, 1 recipient\(s\)$/,
+  );
+
+  // Google refuses to read the draft back: the log says so, the reply is made all the same.
+  w.gmail.settings.draftsReadable = false;
+  const again = render(
+    w.click('onReplyWithResult', gmailEvent({ params: reply.compose.parameters })),
+  );
+  assert.equal(again.kind, 'ComposeActionResponse');
+  assert.equal(w.gmail.drafts[1].attachments.length, 1);
+  assert.match(w.logs[1][1], /; read back: not readable \(Exception\)$/);
+  assert.ok(!JSON.stringify(w.logs).includes('scan'), 'no file name in the log');
+  assert.ok(!JSON.stringify(w.logs).includes('@'), 'no address in the log');
 });
 
 test('a scanned PDF to text with OCR', () => {

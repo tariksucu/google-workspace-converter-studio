@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.1.1
+
+- Permissions: Google's consent screen now lets you tick each permission separately. When something
+  you click needs a permission you left unticked, the add-on asks for it with Google's own
+  **Authorization required** card and carries on once you allow it. Before, signing in said
+  "Converter Studio could not be reached" instead.
+- Each part of the add-on asks only for what it uses: signing in and converting need the connection to
+  Converter Studio and your sign-in; the attachments list the open message; the reply draft the
+  compose permission; Drive its own. In Gmail, Drive permissions are asked for only when you save to
+  Drive.
+- When Converter Studio cannot be reached, the reason goes to the add-on's log (without tokens, keys
+  or file contents). The reply draft writes one line there too: how many files it attached and their
+  size, never a file name or an address.
+- The converted file attached to a reply carries a plain media type (no `charset` or other
+  parameter).
+- For developers: `npm run bundle` writes the add-on as one file for the Apps Script editor, for a
+  copy without clasp.
+
 ## 1.1.0
 
 - Sign in with your Google account ("Continue with Google") instead of pasting an API key: the

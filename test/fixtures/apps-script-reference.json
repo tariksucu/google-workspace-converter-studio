@@ -1,5 +1,5 @@
 {
-  "_source": "Method tables and enum members of Google Apps Script reference pages (https://developers.google.com/apps-script/reference/...: card-service, url-fetch, base/blob, utilities, properties, cache, gmail, script), read 2026-11-23. The fakes in test/fakes.mjs refuse any method that is not listed here.",
+  "_source": "Method tables and enum members of Google Apps Script reference pages (https://developers.google.com/apps-script/reference/...: card-service, url-fetch, base/blob, utilities, properties, cache, gmail, script), read 2026-11-23 (ScriptApp, AuthorizationInfo, AuthMode and AuthorizationStatus read again the same day for the permission checks). The fakes in test/fakes.mjs refuse any method that is not listed here.",
   "classes": {
     "Action": {
       "methods": [
@@ -27,6 +27,9 @@
         "setResourceDisplayName",
         "throwException"
       ]
+    },
+    "AuthorizationInfo": {
+      "methods": ["getAuthorizationStatus", "getAuthorizationUrl", "getAuthorizedScopes"]
     },
     "Blob": {
       "methods": [
@@ -509,6 +512,8 @@
     }
   },
   "enums": {
+    "AuthMode": ["NONE", "CUSTOM_FUNCTION", "LIMITED", "FULL"],
+    "AuthorizationStatus": ["REQUIRED", "NOT_REQUIRED"],
     "ComposedEmailType": ["REPLY_AS_DRAFT", "STANDALONE_DRAFT"],
     "ImageStyle": ["CIRCLE", "SQUARE"],
     "LoadIndicator": ["NONE", "SPINNER"],

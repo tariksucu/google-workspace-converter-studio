@@ -1,5 +1,7 @@
 node_modules/
 coverage/
+# tools/bundle.mjs: the add-on as one file for the Apps Script editor (made from src/, never edited).
+dist/
 .env
 .env.*
 .DS_Store

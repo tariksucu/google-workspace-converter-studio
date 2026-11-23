@@ -7,8 +7,10 @@
 import { loadAddOn } from '../tools/load.mjs';
 import { ADA, AUDIENCE, SESSION, fakeApi } from './fake-api.mjs';
 import {
+  SCOPE,
   fakeCacheService,
   fakeCardService,
+  fakeConsent,
   fakeDrive,
   fakeGmail,
   fakeIdToken,
@@ -20,7 +22,7 @@ import {
   render,
 } from './fakes.mjs';
 
-export { ADA, AUDIENCE, SESSION, render };
+export { ADA, AUDIENCE, SCOPE, SESSION, render };
 export const TOKEN = 'ya29.fake-oauth-token';
 
 /** The user's properties when signed in with the fake API's starting session. */
@@ -142,36 +144,48 @@ export function realClock() {
  * The add-on with its fake Google account.
  * @param {{ messages?: object, driveFiles?: object, user?: object, script?: object, partBytes?: number,
  *   allowlist?: string[], openLinkPrefixes?: string[], network?: (request: object) => object,
- *   clock?: object, identity?: () => string | null }} [options]
+ *   clock?: object, identity?: () => string | null, granted?: string[] }} [options]
  *   `network` replaces the fake Converter Studio API (a run against the real API passes the real
  *   network); Drive's REST stays fake either way. `user`: the user's properties (default: signed
  *   in). `identity`: Google's identity token for the user (default: one for `w.google.account`,
- *   issued to AUDIENCE, an hour long).
+ *   issued to AUDIENCE, an hour long, as Apps Script's was in a real account: no `azp`).
+ *   `granted`: the scopes the user allowed on Google's consent screen (default: all of them).
  */
 export function world(options = {}) {
   const clock = options.clock ?? { now: Date.UTC(2026, 10, 23, 9, 0, 0) };
+  const consent = fakeConsent(options.granted);
   const api = fakeApi({ clock, partBytes: options.partBytes });
-  const drive = fakeDrive(options.driveFiles ?? defaultDrive(), TOKEN);
+  const drive = fakeDrive(options.driveFiles ?? defaultDrive(), TOKEN, consent);
   const scope = { phase: 'trigger' };
-  const gmail = fakeGmail(options.messages ?? defaultMessages(), scope);
+  const gmail = fakeGmail(options.messages ?? defaultMessages(), scope, consent);
   const user = fakeProperties(options.user ?? signedIn(clock));
-  /** The Google account using the add-on; `granted: false` as if `openid` was never allowed. */
-  const google = { account: { ...ADA }, granted: true, tokens: 0 };
+  /**
+   * The Google account using the add-on; `granted: false`: Google gives no identity token although
+   * `openid` is allowed. `claims`: added to (or, as undefined, removed from) the token's.
+   */
+  const google = { account: { ...ADA }, granted: true, tokens: 0, claims: {} };
   const identity =
     options.identity ??
     (() => {
       if (!google.granted) return null;
       google.tokens++;
       const now = Math.floor(clock.now / 1000);
-      return fakeIdToken({
+      // Without `userinfo.email`, Google leaves the e-mail out of the token.
+      const email = consent.has(SCOPE.email)
+        ? { email: google.account.email, email_verified: true }
+        : {};
+      const claims = {
         iss: 'https://accounts.google.com',
         aud: AUDIENCE,
         sub: google.account.sub,
-        email: google.account.email,
-        email_verified: true,
+        ...email,
         iat: now,
         exp: now + 3600,
-      });
+        ...google.claims,
+      };
+      return fakeIdToken(
+        Object.fromEntries(Object.entries(claims).filter(([, v]) => v !== undefined)),
+      );
     });
   const script = fakeProperties(options.script ?? {});
   const cache = fakeCacheService(clock);
@@ -183,7 +197,7 @@ export function world(options = {}) {
         headers: {},
         body: 'not routed',
       },
-    options.allowlist ? { allowlist: options.allowlist } : undefined,
+    options.allowlist ? { allowlist: options.allowlist, consent } : { consent },
   );
   const logs = [];
   const log =
@@ -200,7 +214,7 @@ export function world(options = {}) {
     PropertiesService: fakePropertiesService({ user, script }),
     CacheService: cache.service,
     Utilities: fakeUtilities(clock),
-    ScriptApp: fakeScriptApp(TOKEN, identity),
+    ScriptApp: fakeScriptApp(TOKEN, identity, consent),
     console: { log: log('log'), info: log('info'), warn: log('warn'), error: log('error') },
   });
   // The scripts' clock is the shared one: a 90-second conversion takes no real time.
@@ -215,6 +229,7 @@ export function world(options = {}) {
   return {
     addOn,
     api,
+    consent,
     drive,
     gmail,
     google,

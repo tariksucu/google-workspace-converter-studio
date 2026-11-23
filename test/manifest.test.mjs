@@ -65,6 +65,22 @@ test('the scopes: per-message and per-file only, never full Gmail or Drive', () 
   );
 });
 
+test("the add-on's permission table is the manifest's scopes, and every scope is needed by a part", () => {
+  const config = loadAddOn().get('CS_CONFIG');
+  assert.deepEqual(Object.values(config.scopes), MANIFEST.oauthScopes, 'same scopes, same order');
+  const used = new Set();
+  for (const [feature, names] of Object.entries(config.needs))
+    for (const name of names) {
+      assert.ok(name in config.scopes, `${feature}: ${name}`);
+      used.add(name);
+    }
+  assert.deepEqual(
+    [...used].sort(),
+    Object.keys(config.scopes).sort(),
+    'no scope asked for by no part',
+  );
+});
+
 test('the validator catches what Google refuses', () => {
   const broken = structuredClone(MANIFEST);
   broken.addOns.common.homepageTrigger.runFunction = 'onNothing';

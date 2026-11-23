@@ -66,8 +66,9 @@ const CsSession = (function () {
      * no account is made; when there is none (deleted since), the add-on signs out.
      */
     function signIn(signUp) {
+      // Null when Google has not granted `openid`; Main.js's `identityToken` then asks Google for it
+      // (Google's permission card) before this says so.
       const idToken = options.identityToken();
-      // Null when Google has not granted `openid` (the add-on's permissions were not accepted).
       if (!idToken) throw new CsErrors.CsError('noIdentity');
       let answer;
       try {
@@ -105,6 +106,8 @@ const CsSession = (function () {
         try {
           return renewal();
         } catch (error) {
+          // Google asking for a permission (the identity token's) ends the execution here too.
+          CsErrors.passGoogleStop(error);
           const gone = error instanceof CsErrors.CsError && error.code === 'accountGone';
           if (!gone && session.expiresAt > now()) return session.token;
           throw error;

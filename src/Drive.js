@@ -9,7 +9,8 @@
  *
  * It gets its services passed in: `drive` is the advanced Drive service (v3), `urlFetch` is
  * UrlFetchApp (for the file's bytes: the Drive API's `alt=media` and `export`, with the add-on's
- * own OAuth token), `user` the user's properties.
+ * own OAuth token), `user` the user's properties, `checkPermission` Main.js's second look at the
+ * user's permissions after Drive refused.
  */
 const CsDrive = (function () {
   const FILES = 'https://www.googleapis.com/drive/v3/files/';
@@ -33,9 +34,17 @@ const CsDrive = (function () {
    *   token: () => string,
    *   user: { getProperty: Function, setProperty: Function },
    *   remaining: () => number,
+   *   checkPermission?: (scopes: string[]) => void,
    * }} deps
+   *   `checkPermission`: called after Drive refused; ends the execution with Google's own
+   *   permission card when one of `scopes` was not granted (the user may untick `drive.file` on
+   *   Google's consent screen), returns otherwise (Main.js).
    */
   function createDriveFiles(deps) {
+    const checkPermission = deps.checkPermission || (() => {});
+    const FILE_SCOPES = [CS_CONFIG.scopes.driveFile];
+    const BYTES_SCOPES = [CS_CONFIG.scopes.driveFile, CS_CONFIG.scopes.fetch];
+
     /** The file's name, type, size and folders; `fileGone` if the add-on may not see it. */
     function metadata(fileId) {
       try {
@@ -44,6 +53,7 @@ const CsDrive = (function () {
           supportsAllDrives: true,
         });
       } catch {
+        checkPermission(FILE_SCOPES);
         throw new CsErrors.CsError('fileGone');
       }
     }
@@ -77,12 +87,15 @@ const CsDrive = (function () {
           timeoutSeconds: Math.max(1, Math.floor((left - 2000) / 1000)),
         });
       } catch {
+        checkPermission(BYTES_SCOPES);
         throw new CsErrors.CsError('fileGone');
       }
       const status = response.getResponseCode();
       if (status !== 200) {
         if (reasonOf(response) === 'exportSizeLimitExceeded')
           throw new CsErrors.CsError('exportTooLarge');
+        // The add-on's token without `drive.file` is refused (401 or 403).
+        if (status === 401 || status === 403) checkPermission(FILE_SCOPES);
         throw new CsErrors.CsError('fileGone');
       }
       const blob = response.getBlob();
@@ -109,7 +122,8 @@ const CsDrive = (function () {
           const folder = deps.drive.Files.get(known, { fields: 'id,trashed,mimeType' });
           if (folder && !folder.trashed && folder.mimeType === FOLDER_MIME) return folder.id;
         } catch {
-          // Deleted, or no longer the add-on's: look again below.
+          // Deleted, or no longer the add-on's: look again below. Or `drive.file` unticked.
+          checkPermission(FILE_SCOPES);
         }
       }
       const name = CS_CONFIG.driveFolderName.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
@@ -148,7 +162,8 @@ const CsDrive = (function () {
         try {
           return { file: create(blob, parent), where: 'beside' };
         } catch {
-          // No write access there: the app folder below.
+          // No write access there: the app folder below. Or `drive.file` unticked.
+          checkPermission(FILE_SCOPES);
         }
       }
       return saveToAppFolder(blob);
@@ -158,7 +173,9 @@ const CsDrive = (function () {
     function saveToAppFolder(blob) {
       try {
         return { file: create(blob, appFolder()), where: 'appFolder' };
-      } catch {
+      } catch (error) {
+        CsErrors.passGoogleStop(error);
+        checkPermission(FILE_SCOPES);
         throw new CsErrors.CsError('driveSaveFailed');
       }
     }

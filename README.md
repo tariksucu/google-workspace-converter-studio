@@ -25,7 +25,8 @@ update of the add-on.
 ## Installation
 
 Install **Converter Studio** from the Google Workspace Marketplace, then open Gmail or Google Drive and
-click the Converter Studio icon in the side panel. Google asks you to allow the permissions below once.
+click the Converter Studio icon in the side panel. Google asks you to allow the permissions below (see
+[Permissions](#permissions)).
 
 ## Sign in
 
@@ -90,6 +91,21 @@ running at Converter Studio: click **Check again** a little later.
 
 The add-on never asks for full access to your mail or your Drive, nor for your name or profile picture.
 
+Google's permission screen has a box for each permission, and you may leave any of them unticked. Each
+part of the add-on asks only for what it uses, when you first use it:
+
+- **Continue with Google**, and everything sent to Converter Studio: _Connect to an external service_,
+  `openid` and your e-mail address;
+- **Show attachments** and **Convert** in Gmail: the open message;
+- **Reply with the file attached**: the open message and drafts;
+- **Save to Google Drive** and everything in Drive: the Drive files you use with the add-on (and, for the
+  file you select, its name and type).
+
+If something you click needs a permission you left unticked, Google shows its own **Authorization
+required** card instead of the add-on's answer. Click **Authorize**, allow it, and the add-on carries on
+with what you clicked. Using the add-on in Gmail never asks for Drive permissions until you save to
+Drive.
+
 ## Privacy
 
 - Only the files you choose to convert are sent to Converter Studio, over HTTPS, with your sign-in.
@@ -119,12 +135,17 @@ no build step, no library). Everything except the thin Apps Script glue (`Main.j
 
 ```sh
 npm test            # Node's test runner: the scripts loaded as Apps Script loads them, with fakes
-                    # of the Apps Script services held to Google's reference, and a fake API
+                    # of the Apps Script services held to Google's reference (each refuses without
+                    # its permission, as Google does), and a fake API
 npm run validate    # appsscript.json against the rules of Google's manifest reference
+npm run bundle      # the add-on as one file, dist/converter-studio-<version>.gs (generated)
 ```
 
 To try your own copy: create an Apps Script project, copy `.clasp.json.example` to `.clasp.json` with its
-script id, `clasp push`, then **Deploy → Test deployments → Install**.
+script id, `clasp push`, then **Deploy → Test deployments → Install**. Without clasp: in the Apps Script
+editor, show the manifest (Project Settings → **Show "appsscript.json" manifest file in editor**) and
+paste `src/appsscript.json` into it, then paste the output of `npm run bundle` into one script file.
+Apps Script loads a project's files into one global scope, so the single file runs the same.
 
 ## Support
 

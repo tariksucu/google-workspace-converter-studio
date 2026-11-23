@@ -9,9 +9,13 @@
  *   allowlists for fetching and for links).
  * - Gmail's current-message scope is enforced: with `gmail.addons.current.message.action`, the
  *   message's content can be read in a button's callback, not when a message is merely opened.
+ * - The user's permissions are enforced (fakeConsent): since Google's granular consent, a user may
+ *   leave any scope of the manifest unticked, and each fake service refuses as Google does without
+ *   its scope (UrlFetchApp, GmailApp, Drive, the identity token), with Google's message in the
+ *   user's language (Turkish here, as in the first real run: the add-on must not read it).
  *
- * What cannot be faked faithfully (how cards look, Google's own error texts, the 30-second limit
- * enforced by Google) has to be tried in a real Google account.
+ * What cannot be faked faithfully (how cards look, Google's own permission card, the 30-second
+ * limit enforced by Google) has to be tried in a real Google account.
  */
 import { createHash, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
@@ -51,6 +55,72 @@ export function strict(className, impl, state) {
 const isString = (v) => typeof v === 'string';
 function needString(className, method, value) {
   if (!isString(value)) throw new TypeError(`${className}.${method}: expected a string`);
+}
+
+/** An enum of Google's reference (CardService's and ScriptApp's): unknown members throw. */
+function enumOf(name) {
+  const values = Object.fromEntries(REFERENCE.enums[name].map((m) => [m, `${name}.${m}`]));
+  return new Proxy(values, {
+    get(t, p) {
+      if (typeof p === 'symbol') return t[p];
+      if (!(p in t)) throw new TypeError(`${name}.${String(p)} does not exist`);
+      return t[p];
+    },
+  });
+}
+
+// --- Consent (Google's granular OAuth consent) --------------------------------------------------
+
+const AUTH = 'https://www.googleapis.com/auth/';
+export const SCOPE = {
+  gmail: AUTH + 'gmail.addons.execute',
+  message: AUTH + 'gmail.addons.current.message.action',
+  compose: AUTH + 'gmail.addons.current.action.compose',
+  selection: AUTH + 'drive.addons.metadata.readonly',
+  driveFile: AUTH + 'drive.file',
+  fetch: AUTH + 'script.external_request',
+  openid: 'openid',
+  email: AUTH + 'userinfo.email',
+};
+
+/**
+ * What the user allowed on Google's consent screen: a box per scope of the manifest, any of which
+ * may be left unticked (all ticked by default). The fake services check it as Google does.
+ * `asked`: every ScriptApp.requireScopes / requireAllScopes call ({ mode, scopes, missing });
+ * `looked`: every getAuthorizationInfo call; `stops`: the exceptions with which requireScopes
+ * ended an execution (Google then shows its "Authorization required" card).
+ */
+export function fakeConsent(granted = MANIFEST.oauthScopes) {
+  const consent = {
+    granted: new Set(granted),
+    asked: [],
+    looked: [],
+    stops: [],
+    has: (scope) => consent.granted.has(scope),
+    /** The user allows what Google's card asked for (all of the manifest when nothing is named). */
+    grant: (...scopes) => {
+      for (const s of scopes.length ? scopes : MANIFEST.oauthScopes) consent.granted.add(s);
+    },
+    revoke: (...scopes) => {
+      for (const s of scopes) consent.granted.delete(s);
+    },
+    /** Only these, as a user who ticked exactly them. */
+    only: (scopes) => {
+      consent.granted = new Set(scopes);
+    },
+  };
+  return consent;
+}
+
+/**
+ * The exception a Google service throws without its scope, in the user's language. The first real
+ * run (2026-11-23, an account in Turkish) read: "Exception: UrlFetchApp.fetch işlevini çağırma
+ * izniniz yok. Gerekli izinler: https://www.googleapis.com/auth/script.external_request".
+ */
+export function permissionError(call, scope) {
+  const error = new Error(`${call} işlevini çağırma izniniz yok. Gerekli izinler: ${scope}`);
+  error.name = 'Exception';
+  return error;
 }
 
 // --- Blob ---------------------------------------------------------------------------------------
@@ -253,16 +323,9 @@ function checkCard(card) {
 export function fakeCardService({ openLinkPrefixes } = {}) {
   linkPrefixes = openLinkPrefixes ?? MANIFEST.addOns.common.openLinkUrlPrefixes ?? [];
   const enums = {};
-  for (const [name, members] of Object.entries(REFERENCE.enums)) {
-    const values = Object.fromEntries(members.map((m) => [m, `${name}.${m}`]));
-    enums[name] = new Proxy(values, {
-      get(t, p) {
-        if (typeof p === 'symbol') return t[p];
-        if (!(p in t)) throw new TypeError(`CardService.${name}.${String(p)} does not exist`);
-        return t[p];
-      },
-    });
-  }
+  const scriptEnums = REFERENCE.classes.ScriptApp.properties;
+  for (const name of Object.keys(REFERENCE.enums))
+    if (!scriptEnums.includes(name)) enums[name] = enumOf(name);
   const cardBuilder = () =>
     builder('CardBuilder', (state) => ({
       build: () => {
@@ -429,11 +492,17 @@ const LIMIT = 50 * 1024 * 1024;
 
 /**
  * UrlFetchApp over a handler `({ method, url, headers, body, timeoutSeconds }) → { status,
- * headers, body }` (or a thrown `{ network: true }` for a lost connection).
+ * headers, body }` (or a thrown `{ network: true }` for a lost connection). Without
+ * `script.external_request` in `consent`, it throws Google's permission exception and sends
+ * nothing.
  */
-export function fakeUrlFetch(handler, { allowlist = MANIFEST.urlFetchWhitelist ?? [] } = {}) {
+export function fakeUrlFetch(
+  handler,
+  { allowlist = MANIFEST.urlFetchWhitelist ?? [], consent = fakeConsent() } = {},
+) {
   const requests = [];
   const fetch = (url, params = {}) => {
+    if (!consent.has(SCOPE.fetch)) throw permissionError('UrlFetchApp.fetch', SCOPE.fetch);
     needString('UrlFetchApp', 'fetch', url);
     for (const key of Object.keys(params))
       if (!FETCH_PARAMS.has(key))
@@ -504,12 +573,15 @@ function httpResponse(status, headers, body) {
 // --- Gmail --------------------------------------------------------------------------------------
 
 /**
- * GmailApp over `messages` ({ [id]: { token, attachments: [{ name, bytes, contentType, inline }] } }).
+ * GmailApp over `messages` ({ [id]: { token, from?, attachments: [{ name, bytes, contentType, inline }] } }).
  * `scope.phase` is 'trigger' while a contextual trigger runs and 'action' in a button's callback.
+ * Reading the message needs `gmail.addons.current.message.action` in `consent`, a draft
+ * `gmail.addons.current.action.compose`.
  */
-export function fakeGmail(messages, scope) {
+export function fakeGmail(messages, scope, consent = fakeConsent()) {
   let current = null;
   const drafts = [];
+  const settings = { draftsReadable: true };
   const attachmentFake = (a) =>
     fakeBlob(a.bytes, a.contentType, a.name, 'GmailAttachment', {
       getSize: () => a.bytes.length,
@@ -527,6 +599,8 @@ export function fakeGmail(messages, scope) {
         return m.attachments.filter((a) => (a.inline ? inline : regular)).map(attachmentFake);
       },
       createDraftReply: (body, options = {}) => {
+        if (!consent.has(SCOPE.compose))
+          throw permissionError('GmailMessage.createDraftReply', SCOPE.compose);
         if (scope.phase !== 'action') throw new Error('Access denied: drafts only from a click');
         needString('GmailMessage', 'createDraftReply', body);
         const known = [
@@ -548,9 +622,33 @@ export function fakeGmail(messages, scope) {
             throw new TypeError('attachments: BlobSource[]');
           return { name: s.name, contentType: s.contentType, bytes: s.bytes };
         });
-        const draft = { id: 'r' + (drafts.length + 1), replyTo: id, body, attachments };
+        // A reply goes to the sender (the reply-to address); Gmail's own address book is not faked.
+        const to = m.from ?? 'sender@example.com';
+        const draft = { id: 'r' + (drafts.length + 1), replyTo: id, to, body, attachments };
         drafts.push(draft);
-        return strict('GmailDraft', { getId: () => draft.id }, { kind: 'GmailDraft', ...draft });
+        return strict(
+          'GmailDraft',
+          {
+            getId: () => draft.id,
+            // The draft as a message: what the add-on reads back for its log. Google documents
+            // GmailDraft's methods with the full Gmail scope only: `draftsReadable` false refuses.
+            getMessage: () => {
+              if (!settings.draftsReadable)
+                throw permissionError('GmailDraft.getMessage', 'https://mail.google.com/');
+              return strict('GmailMessage', {
+                getTo: () => draft.to,
+                getAttachments: () =>
+                  draft.attachments.map((a) =>
+                    fakeBlob(a.bytes, a.contentType, a.name, 'GmailAttachment', {
+                      getSize: () => a.bytes.length,
+                      getHash: () => createHash('sha1').update(a.bytes).digest('hex'),
+                    }),
+                  ),
+              });
+            },
+          },
+          { kind: 'GmailDraft', ...draft },
+        );
       },
     });
   const app = strict('GmailApp', {
@@ -559,13 +657,15 @@ export function fakeGmail(messages, scope) {
       current = token;
     },
     getMessageById: (id) => {
+      if (!consent.has(SCOPE.message))
+        throw permissionError('GmailApp.getMessageById', SCOPE.message);
       const m = messages[id];
       if (!m) return null;
       if (current !== m.token) throw new Error('Access denied: missing the message access token');
       return messageFake(id, m);
     },
   });
-  return { app, drafts };
+  return { app, drafts, settings };
 }
 
 // --- Drive (advanced service, v3) and Drive's REST for file bytes ------------------------------
@@ -609,8 +709,13 @@ const DRIVE_LIST_ARGS = new Set([
  * Studio's Drive app found on 2026-11-21.
  * @param {Record<string, { name: string, mimeType: string, bytes?: Buffer, parents?: string[], granted?: boolean, writable?: boolean, exportBytes?: Buffer, exportTooLarge?: boolean }>} files
  */
-export function fakeDrive(files, token) {
+export function fakeDrive(files, token, consent = fakeConsent()) {
   let next = 1;
+  /** Without `drive.file` the add-on sees no file at all (Apps Script refuses the call). */
+  const allowed = (call) => {
+    if (!consent.has(SCOPE.driveFile))
+      throw permissionError(`Drive.Files.${call}`, SCOPE.driveFile);
+  };
   const visible = (f) => f && (f.granted || f.byApp) && !f.deleted;
   const pick = (f, fields) => {
     const all = {
@@ -636,12 +741,14 @@ export function fakeDrive(files, token) {
   for (const [id, f] of Object.entries(files)) f.id = id;
   const Files = {
     get: (id, args) => {
+      allowed('get');
       check(args, DRIVE_GET_ARGS, 'get');
       const f = files[id];
       if (!visible(f)) throw error('get', `File not found: ${id}.`);
       return pick(f, args?.fields);
     },
     create: (resource, blob, args) => {
+      allowed('create');
       check(args, DRIVE_CREATE_ARGS, 'create');
       const parent = resource.parents?.[0] ?? 'root';
       const folder = files[parent];
@@ -663,6 +770,7 @@ export function fakeDrive(files, token) {
       return pick(files[id], args?.fields);
     },
     list: (args) => {
+      allowed('list');
       check(args, DRIVE_LIST_ARGS, 'list');
       const q = String(args?.q ?? '');
       const name = /name = '((?:[^'\\]|\\.)*)'/.exec(q)?.[1]?.replace(/\\(.)/g, '$1');
@@ -691,6 +799,13 @@ export function fakeDrive(files, token) {
         status: 401,
         headers: {},
         body: { error: { code: 401, message: 'Invalid Credentials' } },
+      };
+    // The add-on's token carries the scopes the user allowed.
+    if (!consent.has(SCOPE.driveFile))
+      return {
+        status: 403,
+        headers: { 'Content-Type': 'application/json' },
+        body: { error: { code: 403, errors: [{ reason: 'insufficientPermissions' }] } },
       };
     const f = files[decodeURIComponent(match[1])];
     if (!visible(f))
@@ -740,14 +855,59 @@ export function fakeUtilities(clock) {
 }
 
 /**
- * ScriptApp: the add-on's own OAuth token (for Drive) and Google's identity token for the user,
- * from `identity()` (null, as Google answers, when the `openid` scope is not in the manifest).
+ * ScriptApp: the add-on's own OAuth token (for Drive), Google's identity token for the user from
+ * `identity()` (null, as Google answers, without `openid` in the manifest or in the user's
+ * consent), and the permission checks of Google's granular consent:
+ *
+ * - `requireScopes(authMode, scopes)` / `requireAllScopes(authMode)`: "If any of the specified
+ *   consents are missing, the execution ends and an authorization prompt appears" (reference);
+ *   here an exception kept in `consent.stops`. "Invalid scopes, or scopes the script does not
+ *   require, cause an error."
+ * - `getAuthorizationInfo(authMode[, scopes])`: REQUIRED while one is missing, its authorized ones.
  */
-export function fakeScriptApp(token, identity = () => null) {
-  const hasOpenId = (MANIFEST.oauthScopes ?? []).includes('openid');
+export function fakeScriptApp(token, identity = () => null, consent = fakeConsent()) {
+  const manifest = MANIFEST.oauthScopes ?? [];
+  const AuthMode = enumOf('AuthMode');
+  const AuthorizationStatus = enumOf('AuthorizationStatus');
+  const checked = (method, mode, scopes) => {
+    if (!Object.values(AuthMode).includes(mode))
+      throw new TypeError(`ScriptApp.${method}: authMode must be a ScriptApp.AuthMode`);
+    if (!Array.isArray(scopes) || !scopes.length || !scopes.every(isString))
+      throw new TypeError(`ScriptApp.${method}: oAuthScopes must be a non-empty String[]`);
+    for (const s of scopes)
+      if (!manifest.includes(s))
+        throw new Error(`ScriptApp.${method}: ${s} is not a scope this script requires`);
+    // (An array of this realm: the add-on's come from its own `vm` context.)
+    return Array.from(scopes).filter((s) => !consent.has(s));
+  };
+  const require = (method, mode, scopes) => {
+    const missing = checked(method, mode, scopes);
+    consent.asked.push({ mode, scopes: [...scopes], missing });
+    if (!missing.length) return;
+    // Google's text names the missing scopes, in the user's language; the add-on never reads it.
+    const stop = new Error(`Yetkilendirme gerekli: ${missing.join(', ')}`);
+    consent.stops.push(stop);
+    throw stop;
+  };
   return strict('ScriptApp', {
+    AuthMode,
+    AuthorizationStatus,
     getOAuthToken: () => token,
-    getIdentityToken: () => (hasOpenId ? identity() : null),
+    getIdentityToken: () =>
+      manifest.includes('openid') && consent.has('openid') ? identity() : null,
+    requireScopes: (mode, scopes) => require('requireScopes', mode, scopes),
+    requireAllScopes: (mode) => require('requireAllScopes', mode, manifest),
+    getAuthorizationInfo: (mode, scopes = manifest) => {
+      const missing = checked('getAuthorizationInfo', mode, scopes);
+      consent.looked.push({ mode, scopes: [...scopes], missing });
+      return strict('AuthorizationInfo', {
+        getAuthorizationStatus: () =>
+          missing.length ? AuthorizationStatus.REQUIRED : AuthorizationStatus.NOT_REQUIRED,
+        getAuthorizationUrl: () =>
+          missing.length ? 'https://script.google.com/macros/d/fake-script-id/authorize' : null,
+        getAuthorizedScopes: () => scopes.filter((s) => consent.has(s)),
+      });
+    },
   });
 }
 

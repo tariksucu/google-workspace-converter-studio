@@ -2,7 +2,15 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { loadAddOn } from '../tools/load.mjs';
 import { ADA, AUDIENCE, SESSION, fakeApi } from './fake-api.mjs';
-import { fakeBlob, fakeIdToken, fakeProperties, fakeUrlFetch, fakeUtilities } from './fakes.mjs';
+import {
+  SCOPE,
+  fakeBlob,
+  fakeConsent,
+  fakeIdToken,
+  fakeProperties,
+  fakeUrlFetch,
+  fakeUtilities,
+} from './fakes.mjs';
 
 const BASE = 'https://converter.studio/api';
 
@@ -321,6 +329,79 @@ test('a conversion over the limit waits for a go-ahead, then runs', () => {
   assert.equal(quoted.status, 'quoted');
   assert.equal(quoted.credits, 30);
   assert.equal(client.settle(client.confirm(quoted.id)).status, 'done');
+});
+
+test('UrlFetchApp refused for want of its permission: logged, Google asked, never "network"', () => {
+  const clock = { now: Date.UTC(2026, 10, 23, 9) };
+  const api = fakeApi({ clock });
+  const consent = fakeConsent();
+  consent.revoke(SCOPE.fetch);
+  const addOn = loadAddOn();
+  const Errors = addOn.get('CsErrors');
+  const lines = [];
+  const asked = [];
+  let missing = true;
+  const stop = new Error('Google ends the execution here');
+  const client = addOn.get('CsApi').createClient({
+    session: null,
+    baseUrl: BASE,
+    version: '1.1.1',
+    urlFetch: fakeUrlFetch(api.handler, { consent }).urlFetch,
+    newKey: () => 'k',
+    now: () => clock.now,
+    sleep: (ms) => (clock.now += ms),
+    deadline: clock.now + 24000,
+    checkPermission: (scopes) => {
+      asked.push([...scopes]);
+      if (missing) throw Errors.googleStop(stop);
+    },
+    log: (text) => lines.push(text),
+  });
+  assert.equal(
+    caught(() => client.formats()),
+    stop,
+  );
+  assert.deepEqual(asked, [[SCOPE.fetch]]);
+  assert.deepEqual(lines, [
+    `request not sent (GET ${BASE}/v1/formats, attempt 1): Exception: UrlFetchApp.fetch işlevini çağırma izniniz yok. Gerekli izinler: ${SCOPE.fetch}`,
+  ]);
+  // When Apps Script says nothing is missing, it is a network failure after all: tried again.
+  missing = false;
+  const e = caught(() => client.formats());
+  assert.equal(e.code, 'network');
+  assert.equal(e.message, 'Converter Studio could not be reached. Try again in a moment.');
+  assert.equal(lines.length, 4);
+});
+
+test("Google's exception passes the catches it meets; the log never holds a token", () => {
+  const Errors = loadAddOn().get('CsErrors');
+  const stop = new Error('x');
+  assert.equal(Errors.isGoogleStop(stop), false);
+  assert.equal(Errors.googleStop(stop), stop);
+  assert.equal(Errors.isGoogleStop(stop), true);
+  assert.equal(
+    caught(() => Errors.passGoogleStop(stop)),
+    stop,
+  );
+  assert.doesNotThrow(() => Errors.passGoogleStop(new Error('other')));
+  assert.equal(Errors.asCsError(new Error('internals')).message, 'Something went wrong.');
+
+  const jwt = `${fakeIdToken({ sub: '1' })}`;
+  const text = Errors.scrub(
+    `GET https://converter.studio/api/v1/uploads/up1?token=tok_up1#x failed; Authorization: Bearer cvs_gws_${'a'.repeat(40)} ya29.a0AfH6SM-xyz ${jwt} cvs_live_${'b'.repeat(32)}`,
+  );
+  assert.equal(
+    text,
+    'GET https://converter.studio/api/v1/uploads/up1?… failed; Authorization: Bearer … ya29.… (token) cvs_…',
+  );
+  assert.equal(
+    Errors.describe(
+      Object.assign(new Error('boom https://x.example/a?key=1'), { name: 'Exception' }),
+    ),
+    'Exception: boom https://x.example/a?…',
+  );
+  assert.equal(Errors.describe('plain'), 'plain');
+  assert.equal(Errors.describe(new Error('y'.repeat(5000))).length, 2000);
 });
 
 test('addresses: origins without the URL class Apps Script lacks', () => {

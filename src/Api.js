@@ -107,7 +107,12 @@ const CsApi = (function () {
    *   now?: () => number,
    *   sleep?: (ms: number) => void,
    *   deadline?: number,
+   *   checkPermission?: (scopes: string[]) => void,
+   *   log?: (text: string) => void,
    * }} options
+   *   `checkPermission`: called after UrlFetchApp threw; ends the execution with Google's own
+   *   permission card when one of `scopes` was not granted, returns otherwise (Main.js).
+   *   `log`: the project's log (Main.js: console.error).
    */
   function createClient(options) {
     const baseUrl = String(options.baseUrl || '').replace(/\/+$/, '');
@@ -118,6 +123,10 @@ const CsApi = (function () {
     const sleep = options.sleep || (() => {});
     const deadline = options.deadline || now() + CS_CONFIG.budgetMs;
     const remaining = () => deadline - now();
+    const checkPermission = options.checkPermission || (() => {});
+    const log = options.log || (() => {});
+    /** What UrlFetchApp needs: the "external service" permission. */
+    const FETCH_SCOPES = [CS_CONFIG.scopes.fetch];
 
     /** Refuses a link to another address than the API's (the API's own links never are). */
     function checkLink(link) {
@@ -146,9 +155,24 @@ const CsApi = (function () {
                   : timeoutSeconds,
             }),
           );
-        } catch {
-          // UrlFetchApp throws on a lost connection or its own timeout; its message names the
-          // address (never the key, which travels in a header), but is not shown.
+        } catch (error) {
+          // UrlFetchApp throws on a lost connection or its own timeout, and when the user left
+          // its permission unticked (Google's consent screen has a box per permission). Its text is
+          // in the user's language, so it is not read: it goes to the project's log (the address
+          // without its query, never a header or the body), and Apps Script is asked whether the
+          // permission is there; when it is not, Google asks the user for it instead of the add-on
+          // saying "could not be reached".
+          log(
+            'request not sent (' +
+              String(params.method || 'get').toUpperCase() +
+              ' ' +
+              CsErrors.scrub(url) +
+              ', attempt ' +
+              (attempt + 1) +
+              '): ' +
+              CsErrors.describe(error),
+          );
+          checkPermission(FETCH_SCOPES);
           if (attempt < retries && remaining() > 5000) {
             sleep(1000 * Math.pow(2, attempt));
             continue;
