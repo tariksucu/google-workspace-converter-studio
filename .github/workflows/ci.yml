@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  pull_request:
+    paths-ignore:
+      - '**.md'
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - '**.md'
+
+# Cancel in-progress runs for the same branch/PR.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      # The add-on's scripts loaded as Apps Script loads them, with fakes of the Apps Script
+      # services held to Google's reference and a fake Converter Studio API: no network, no
+      # dependencies (Node's own test runner).
+      - name: Run tests
+        run: 'npm test'
+
+      # appsscript.json against the rules of Google's manifest reference.
+      - name: Validate the manifest
+        run: 'npm run validate'

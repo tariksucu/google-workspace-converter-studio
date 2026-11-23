@@ -1,0 +1,24 @@
+{
+  "name": "google-workspace-converter-studio",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Converter Studio for Gmail and Google Drive: a Google Workspace add-on that converts e-mail attachments and Drive files (HEIC to JPG, Word to PDF, scanned PDFs to text, videos to MP4 and more).",
+  "license": "MIT",
+  "author": "Converter Studio <support@converter.studio> (https://converter.studio)",
+  "homepage": "https://converter.studio",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tariksucu/google-workspace-converter-studio.git"
+  },
+  "bugs": {
+    "url": "https://github.com/tariksucu/google-workspace-converter-studio/issues",
+    "email": "support@converter.studio"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "validate": "node tools/validate-manifest.mjs src/appsscript.json"
+  }
+}

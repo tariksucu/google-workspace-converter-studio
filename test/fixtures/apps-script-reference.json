@@ -1,0 +1,528 @@
+{
+  "_source": "Method tables and enum members of Google Apps Script reference pages (https://developers.google.com/apps-script/reference/...: card-service, url-fetch, base/blob, utilities, properties, cache, gmail, script), read 2026-11-23. The fakes in test/fakes.mjs refuse any method that is not listed here.",
+  "classes": {
+    "Action": {
+      "methods": [
+        "addRequiredWidget",
+        "setAllWidgetsAreRequired",
+        "setFunctionName",
+        "setInteraction",
+        "setLoadIndicator",
+        "setMethodName",
+        "setParameters",
+        "setPersistValues"
+      ]
+    },
+    "ActionResponse": {
+      "methods": ["printJson"]
+    },
+    "ActionResponseBuilder": {
+      "methods": ["build", "setNavigation", "setNotification", "setOpenLink", "setStateChanged"]
+    },
+    "AuthorizationException": {
+      "methods": [
+        "printJson",
+        "setAuthorizationUrl",
+        "setCustomUiCallback",
+        "setResourceDisplayName",
+        "throwException"
+      ]
+    },
+    "Blob": {
+      "methods": [
+        "copyBlob",
+        "getAllBlobs",
+        "getAs",
+        "getBytes",
+        "getContentType",
+        "getDataAsString",
+        "getName",
+        "isGoogleType",
+        "setBytes",
+        "setContentType",
+        "setContentTypeFromExtension",
+        "setDataFromString",
+        "setName"
+      ]
+    },
+    "ButtonSet": {
+      "methods": ["addButton", "addEventAction", "setId", "setVisibility"]
+    },
+    "Cache": {
+      "methods": ["get", "getAll", "put", "putAll", "remove", "removeAll"]
+    },
+    "CacheService": {
+      "methods": ["getDocumentCache", "getScriptCache", "getUserCache"]
+    },
+    "CardAction": {
+      "methods": [
+        "setAuthorizationAction",
+        "setComposeAction",
+        "setOnClickAction",
+        "setOnClickOpenLinkAction",
+        "setOpenLink",
+        "setText"
+      ]
+    },
+    "CardBuilder": {
+      "methods": [
+        "addCardAction",
+        "addExpressionData",
+        "addSection",
+        "build",
+        "setDisplayStyle",
+        "setFixedFooter",
+        "setHeader",
+        "setName",
+        "setPeekCardHeader"
+      ]
+    },
+    "CardHeader": {
+      "methods": ["setImageAltText", "setImageStyle", "setImageUrl", "setSubtitle", "setTitle"]
+    },
+    "CardSection": {
+      "methods": [
+        "addWidget",
+        "setCollapseControl",
+        "setCollapsible",
+        "setHeader",
+        "setId",
+        "setNumUncollapsibleWidgets"
+      ]
+    },
+    "CardService": {
+      "methods": [
+        "newAction",
+        "newActionResponseBuilder",
+        "newActionStatus",
+        "newAttachment",
+        "newAuthorizationAction",
+        "newAuthorizationException",
+        "newBorderStyle",
+        "newButtonSet",
+        "newCalendarEventActionResponseBuilder",
+        "newCardAction",
+        "newCardBuilder",
+        "newCardHeader",
+        "newCardSection",
+        "newCardWithId",
+        "newCarousel",
+        "newCarouselCard",
+        "newChatActionResponse",
+        "newChatResponseBuilder",
+        "newChip",
+        "newChipList",
+        "newCollapseControl",
+        "newColumn",
+        "newColumns",
+        "newCommonWidgetAction",
+        "newComposeActionResponseBuilder",
+        "newCondition",
+        "newDataSourceConfig",
+        "newDatePicker",
+        "newDateTimePicker",
+        "newDecoratedText",
+        "newDialog",
+        "newDialogAction",
+        "newDivider",
+        "newDriveDataSourceSpec",
+        "newDriveItemsSelectedActionResponseBuilder",
+        "newEditorFileScopeActionResponseBuilder",
+        "newEventAction",
+        "newExpressionData",
+        "newExpressionDataAction",
+        "newExpressionDataCondition",
+        "newFixedFooter",
+        "newGrid",
+        "newGridItem",
+        "newHostAppDataSource",
+        "newIconImage",
+        "newImage",
+        "newImageButton",
+        "newImageComponent",
+        "newImageCropStyle",
+        "newKeyValue",
+        "newLinkPreview",
+        "newMaterialIcon",
+        "newNavigation",
+        "newNotification",
+        "newOpenLink",
+        "newOverflowMenu",
+        "newOverflowMenuItem",
+        "newPlatformDataSource",
+        "newSelectionInput",
+        "newSuggestions",
+        "newSuggestionsResponseBuilder",
+        "newSwitch",
+        "newTextButton",
+        "newTextInput",
+        "newTextParagraph",
+        "newTimePicker",
+        "newTrigger",
+        "newUniversalActionResponseBuilder",
+        "newUpdateDraftActionResponseBuilder",
+        "newUpdateDraftBccRecipientsAction",
+        "newUpdateDraftBodyAction",
+        "newUpdateDraftCcRecipientsAction",
+        "newUpdateDraftSubjectAction",
+        "newUpdateDraftToRecipientsAction",
+        "newUpdateVisibilityAction",
+        "newValidation",
+        "newWorkflowDataSource"
+      ],
+      "properties": [
+        "BorderType",
+        "ChipListLayout",
+        "CommonDataSource",
+        "ComposedEmailType",
+        "ContentType",
+        "DriveItemType",
+        "ExpressionDataActionType",
+        "ExpressionDataConditionType",
+        "GridItemLayout",
+        "HorizontalAlignment",
+        "Icon",
+        "ImageButtonStyle",
+        "ImageCropType",
+        "ImageStyle",
+        "InputType",
+        "LoadIndicator",
+        "OnClose",
+        "OpenAs",
+        "SelectionInputType",
+        "TextButtonStyle",
+        "TextInputMode",
+        "UpdateDraftBodyType",
+        "VariableButtonSize",
+        "Visibility",
+        "WorkflowDataSourceType"
+      ]
+    },
+    "ComposeActionResponseBuilder": {
+      "methods": ["build", "setGmailDraft"]
+    },
+    "DecoratedText": {
+      "methods": [
+        "addEventAction",
+        "setAuthorizationAction",
+        "setBottomLabel",
+        "setButton",
+        "setComposeAction",
+        "setEndIcon",
+        "setId",
+        "setOnClickAction",
+        "setOnClickOpenLinkAction",
+        "setOpenLink",
+        "setStartIcon",
+        "setSwitchControl",
+        "setText",
+        "setTopLabel",
+        "setVisibility",
+        "setWrapText"
+      ]
+    },
+    "Divider": {
+      "methods": ["addEventAction", "setId", "setVisibility"]
+    },
+    "DriveItemsSelectedActionResponseBuilder": {
+      "methods": ["build", "requestFileScope"]
+    },
+    "FixedFooter": {
+      "methods": ["setPrimaryButton", "setSecondaryButton"]
+    },
+    "GmailApp": {
+      "methods": [
+        "createDraft",
+        "createLabel",
+        "deleteLabel",
+        "getAliases",
+        "getChatThreads",
+        "getDraft",
+        "getDraftMessages",
+        "getDrafts",
+        "getInboxThreads",
+        "getInboxUnreadCount",
+        "getMessageById",
+        "getMessagesForThread",
+        "getMessagesForThreads",
+        "getPriorityInboxThreads",
+        "getPriorityInboxUnreadCount",
+        "getSpamThreads",
+        "getSpamUnreadCount",
+        "getStarredThreads",
+        "getStarredUnreadCount",
+        "getThreadById",
+        "getTrashThreads",
+        "getUserLabelByName",
+        "getUserLabels",
+        "markMessageRead",
+        "markMessageUnread",
+        "markMessagesRead",
+        "markMessagesUnread",
+        "markThreadImportant",
+        "markThreadRead",
+        "markThreadUnimportant",
+        "markThreadUnread",
+        "markThreadsImportant",
+        "markThreadsRead",
+        "markThreadsUnimportant",
+        "markThreadsUnread",
+        "moveMessageToTrash",
+        "moveMessagesToTrash",
+        "moveThreadToArchive",
+        "moveThreadToInbox",
+        "moveThreadToSpam",
+        "moveThreadToTrash",
+        "moveThreadsToArchive",
+        "moveThreadsToInbox",
+        "moveThreadsToSpam",
+        "moveThreadsToTrash",
+        "refreshMessage",
+        "refreshMessages",
+        "refreshThread",
+        "refreshThreads",
+        "search",
+        "sendEmail",
+        "setCurrentMessageAccessToken",
+        "starMessage",
+        "starMessages",
+        "unstarMessage",
+        "unstarMessages"
+      ]
+    },
+    "GmailAttachment": {
+      "methods": [
+        "copyBlob",
+        "getAllBlobs",
+        "getAs",
+        "getBytes",
+        "getContentType",
+        "getDataAsString",
+        "getHash",
+        "getName",
+        "getSize",
+        "isGoogleType",
+        "setBytes",
+        "setContentType",
+        "setContentTypeFromExtension",
+        "setDataFromString",
+        "setName"
+      ]
+    },
+    "GmailDraft": {
+      "methods": ["deleteDraft", "getId", "getMessage", "getMessageId", "send", "update"]
+    },
+    "GmailMessage": {
+      "methods": [
+        "createDraftReply",
+        "createDraftReplyAll",
+        "forward",
+        "getAttachments",
+        "getBcc",
+        "getBody",
+        "getCc",
+        "getDate",
+        "getFrom",
+        "getHeader",
+        "getId",
+        "getPlainBody",
+        "getRawContent",
+        "getReplyTo",
+        "getSubject",
+        "getThread",
+        "getTo",
+        "isDraft",
+        "isInChats",
+        "isInInbox",
+        "isInPriorityInbox",
+        "isInTrash",
+        "isStarred",
+        "isUnread",
+        "markRead",
+        "markUnread",
+        "moveToTrash",
+        "refresh",
+        "reply",
+        "replyAll",
+        "star",
+        "unstar"
+      ]
+    },
+    "HTTPResponse": {
+      "methods": [
+        "getAllHeaders",
+        "getAs",
+        "getBlob",
+        "getContent",
+        "getContentText",
+        "getHeaders",
+        "getResponseCode"
+      ]
+    },
+    "Navigation": {
+      "methods": ["popCard", "popToNamedCard", "popToRoot", "printJson", "pushCard", "updateCard"]
+    },
+    "Notification": {
+      "methods": ["setText"]
+    },
+    "OpenLink": {
+      "methods": ["setOnClose", "setOpenAs", "setUrl"]
+    },
+    "Properties": {
+      "methods": [
+        "deleteAllProperties",
+        "deleteProperty",
+        "getKeys",
+        "getProperties",
+        "getProperty",
+        "setProperties",
+        "setProperty"
+      ]
+    },
+    "PropertiesService": {
+      "methods": ["getDocumentProperties", "getScriptProperties", "getUserProperties"]
+    },
+    "ScriptApp": {
+      "methods": [
+        "deleteTrigger",
+        "getAuthorizationInfo",
+        "getIdentityToken",
+        "getInstallationSource",
+        "getOAuthToken",
+        "getProjectKey",
+        "getProjectTriggers",
+        "getScriptId",
+        "getScriptTriggers",
+        "getService",
+        "getUserTriggers",
+        "invalidateAuth",
+        "newStateToken",
+        "newTrigger",
+        "requireAllScopes",
+        "requireScopes"
+      ],
+      "properties": [
+        "AuthMode",
+        "AuthorizationStatus",
+        "EventType",
+        "InstallationSource",
+        "TriggerSource",
+        "WeekDay"
+      ]
+    },
+    "SelectionInput": {
+      "methods": [
+        "addDataSourceConfig",
+        "addEventAction",
+        "addItem",
+        "addMultiSelectItem",
+        "setExternalDataSource",
+        "setFieldName",
+        "setId",
+        "setMultiSelectMaxSelectedItems",
+        "setMultiSelectMinQueryLength",
+        "setOnChangeAction",
+        "setPlatformDataSource",
+        "setTitle",
+        "setType",
+        "setVisibility"
+      ]
+    },
+    "Switch": {
+      "methods": ["setControlType", "setFieldName", "setOnChangeAction", "setSelected", "setValue"]
+    },
+    "TextButton": {
+      "methods": [
+        "setAltText",
+        "setAuthorizationAction",
+        "setBackgroundColor",
+        "setComposeAction",
+        "setDisabled",
+        "setIcon",
+        "setIconUrl",
+        "setMaterialIcon",
+        "setOnClickAction",
+        "setOnClickOpenLinkAction",
+        "setOpenLink",
+        "setOverflowMenu",
+        "setText",
+        "setTextButtonStyle"
+      ]
+    },
+    "TextInput": {
+      "methods": [
+        "addEventAction",
+        "setFieldName",
+        "setHint",
+        "setHostAppDataSource",
+        "setId",
+        "setInputMode",
+        "setMultiline",
+        "setOnChangeAction",
+        "setSuggestions",
+        "setSuggestionsAction",
+        "setTitle",
+        "setValidation",
+        "setValue",
+        "setVisibility"
+      ]
+    },
+    "TextParagraph": {
+      "methods": ["addEventAction", "setId", "setMaxLines", "setText", "setVisibility"]
+    },
+    "UniversalActionResponse": {
+      "methods": ["printJson"]
+    },
+    "UniversalActionResponseBuilder": {
+      "methods": ["build", "displayAddOnCards", "setOpenLink"]
+    },
+    "UrlFetchApp": {
+      "methods": ["fetch", "fetchAll", "getRequest"]
+    },
+    "Utilities": {
+      "methods": [
+        "base64Decode",
+        "base64DecodeWebSafe",
+        "base64Encode",
+        "base64EncodeWebSafe",
+        "computeDigest",
+        "computeHmacSha256Signature",
+        "computeHmacSignature",
+        "computeRsaSha1Signature",
+        "computeRsaSha256Signature",
+        "computeRsaSignature",
+        "formatDate",
+        "formatString",
+        "getUuid",
+        "gzip",
+        "jsonParse",
+        "jsonStringify",
+        "newBlob",
+        "parseCsv",
+        "parseDate",
+        "sleep",
+        "ungzip",
+        "unzip",
+        "zip"
+      ],
+      "properties": ["Charset", "DigestAlgorithm", "MacAlgorithm", "RsaAlgorithm"]
+    }
+  },
+  "enums": {
+    "ComposedEmailType": ["REPLY_AS_DRAFT", "STANDALONE_DRAFT"],
+    "ImageStyle": ["CIRCLE", "SQUARE"],
+    "LoadIndicator": ["NONE", "SPINNER"],
+    "OnClose": ["NOTHING", "RELOAD", "RELOAD_ADD_ON"],
+    "OpenAs": ["FULL_SIZE", "OVERLAY"],
+    "SelectionInputType": [
+      "CHECK_BOX",
+      "DROPDOWN",
+      "MULTI_SELECT",
+      "OVERFLOW_MENU",
+      "RADIO_BUTTON",
+      "SWITCH"
+    ],
+    "SwitchControlType": ["CHECK_BOX", "SWITCH"],
+    "TextButtonStyle": ["BORDERLESS", "FILLED", "FILLED_TONAL", "OUTLINED", "TEXT"]
+  }
+}

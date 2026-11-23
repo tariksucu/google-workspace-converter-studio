@@ -1,0 +1,8 @@
+node_modules/
+coverage/
+.env
+.env.*
+.DS_Store
+# clasp's own file holds the script id of someone's project (copy .clasp.json.example).
+.clasp.json
+.clasprc.json

@@ -1,0 +1,68 @@
+{
+  "timeZone": "Etc/UTC",
+  "runtimeVersion": "V8",
+  "exceptionLogging": "STACKDRIVER",
+  "dependencies": {
+    "enabledAdvancedServices": [
+      {
+        "userSymbol": "Drive",
+        "serviceId": "drive",
+        "version": "v3"
+      }
+    ]
+  },
+  "oauthScopes": [
+    "https://www.googleapis.com/auth/gmail.addons.execute",
+    "https://www.googleapis.com/auth/gmail.addons.current.message.action",
+    "https://www.googleapis.com/auth/gmail.addons.current.action.compose",
+    "https://www.googleapis.com/auth/drive.addons.metadata.readonly",
+    "https://www.googleapis.com/auth/drive.file",
+    "https://www.googleapis.com/auth/script.external_request"
+  ],
+  "urlFetchWhitelist": [
+    "https://converter.studio/api/",
+    "https://www.googleapis.com/drive/v3/files/"
+  ],
+  "addOns": {
+    "common": {
+      "name": "Converter Studio",
+      "logoUrl": "https://converter.studio/icon1.png",
+      "layoutProperties": {
+        "primaryColor": "#16150f",
+        "secondaryColor": "#ff5418"
+      },
+      "homepageTrigger": {
+        "runFunction": "onHomepage",
+        "enabled": true
+      },
+      "openLinkUrlPrefixes": ["https://converter.studio/", "https://drive.google.com/"],
+      "universalActions": [
+        {
+          "label": "Settings",
+          "runFunction": "onShowSettings"
+        },
+        {
+          "label": "Help",
+          "openLink": "https://converter.studio/support"
+        },
+        {
+          "label": "Privacy policy",
+          "openLink": "https://converter.studio/privacy"
+        }
+      ]
+    },
+    "gmail": {
+      "contextualTriggers": [
+        {
+          "unconditional": {},
+          "onTriggerFunction": "onGmailMessageOpen"
+        }
+      ]
+    },
+    "drive": {
+      "onItemsSelectedTrigger": {
+        "runFunction": "onDriveItemsSelected"
+      }
+    }
+  }
+}
