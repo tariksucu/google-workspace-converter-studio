@@ -423,7 +423,9 @@ function onSaveToDrive(e) {
 
 /**
  * Compose action: a reply to the open message with the converted file attached (Google's own
- * pattern: Gmail add-ons guide, "Compose draft messages", createReplyDraft).
+ * pattern: Gmail add-ons guide, "Compose draft messages", createReplyDraft). Its body is
+ * CS_CONFIG.replyDraftBody, one space, not '': Gmail shows a reply draft with an empty body as a
+ * blank reply, without the recipient and the file (Google's sample passes '' with an htmlBody).
  */
 function onReplyWithResult(e) {
   const features = ['reply', 'converterStudio'];
@@ -437,8 +439,8 @@ function onReplyWithResult(e) {
     if (!(view.outputSize <= CS_CONFIG.maxReplyAttachmentBytes))
       throw new CsErrors.CsError('replyTooLarge');
     const file = csAttachable(CsFlow.fetchResult(ctx.client, view));
-    draft = message.createDraftReply('', { attachments: [file] });
-    csLogDraft(draft, file, view.outputSize);
+    draft = message.createDraftReply(CS_CONFIG.replyDraftBody, { attachments: [file] });
+    csLogDraft(file, view.outputSize);
   } catch (error) {
     CsErrors.passGoogleStop(error);
     if (!(error instanceof CsErrors.CsError)) csCheckPermission(csScopes(e, features));
@@ -464,28 +466,18 @@ function csAttachable(blob) {
 }
 
 /**
- * One line in the project's log about the reply draft: what was attached and what the draft holds
- * when read back (counts, sizes and the media type only; no name, no address). The first real run
- * (2026-11-23) opened a reply box without the attachment although a draft was made; this says
- * whether the draft itself has it. Reading it back may be refused (Google documents GmailDraft's
- * methods with the full Gmail scope only): the log then says so, and the reply goes ahead.
+ * One line in the project's log about the reply draft: what was attached (the count, the size and
+ * the media type; no name, no address). The draft is not read back: Google refuses that with the
+ * add-on's permissions (it documents GmailDraft's methods with the full Gmail scope only; the reply
+ * made in the real account on 2026-11-23 logged "not readable (Exception)").
  */
-function csLogDraft(draft, file, size) {
-  const sent = '1 attachment, ' + size + ' bytes, ' + file.getContentType();
-  let back;
-  try {
-    const copy = draft.getMessage();
-    const list = copy.getAttachments({ includeInlineImages: false, includeAttachments: true });
-    let bytes = 0;
-    for (const a of list) bytes += a.getSize();
-    const to = String(copy.getTo() || '')
-      .split(',')
-      .filter((s) => s.trim()).length;
-    back = list.length + ' attachment(s), ' + bytes + ' bytes, ' + to + ' recipient(s)';
-  } catch (error) {
-    back = 'not readable (' + (error && error.name ? String(error.name) : 'error') + ')';
-  }
-  console.log('Converter Studio add-on: reply draft made with ' + sent + '; read back: ' + back);
+function csLogDraft(file, size) {
+  console.log(
+    'Converter Studio add-on: reply draft made with 1 attachment, ' +
+      size +
+      ' bytes, ' +
+      file.getContentType(),
+  );
 }
 
 // --- Drive --------------------------------------------------------------------------------------

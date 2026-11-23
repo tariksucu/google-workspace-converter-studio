@@ -66,8 +66,9 @@ message only when you click). Click **Convert** beside an attachment, pick the f
 
 - **Download** opens the converted file (the link works for 6 hours);
 - **Save to Google Drive** puts it in a **Converter Studio** folder in My Drive (made once, then reused);
-- **Reply with the file attached** opens a reply to the message with the converted file attached (files
-  up to about 18 MB, Gmail's attachment limit after encoding).
+- **Reply with the file attached** opens a reply to the message's sender with the converted file
+  attached and nothing written in it, ready for you to write (files up to about 18 MB, Gmail's
+  attachment limit after encoding).
 
 **Google Drive.** Select one file. The first time, click **Allow access to this file**: Drive asks you to
 let the add-on open that one file. Pick the format and click **Convert**, then **Save next to the

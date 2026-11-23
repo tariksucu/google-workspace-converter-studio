@@ -13,6 +13,8 @@
  *   leave any scope of the manifest unticked, and each fake service refuses as Google does without
  *   its scope (UrlFetchApp, GmailApp, Drive, the identity token), with Google's message in the
  *   user's language (Turkish here, as in the first real run: the add-on must not read it).
+ * - What Gmail's page shows of the add-on's reply draft, as seen in a real account (gmailReplyBox):
+ *   a draft with an empty body opens as a blank reply, without its recipient and its attachment.
  *
  * What cannot be faked faithfully (how cards look, Google's own permission card, the 30-second
  * limit enforced by Google) has to be tried in a real Google account.
@@ -405,7 +407,16 @@ export function fakeCardService({ openLinkPrefixes } = {}) {
         },
         build: () => {
           if (!state.gmailDraft) throw new Error('ComposeActionResponse: no draft');
-          return strict('ActionResponse', {}, { ...state, kind: 'ComposeActionResponse' });
+          // Gmail then opens the draft: `replyBox` is what its page shows (gmailReplyBox).
+          return strict(
+            'ActionResponse',
+            {},
+            {
+              ...state,
+              kind: 'ComposeActionResponse',
+              replyBox: gmailReplyBox(STATE.get(state.gmailDraft)),
+            },
+          );
         },
       })),
     newDriveItemsSelectedActionResponseBuilder: () =>
@@ -573,15 +584,38 @@ function httpResponse(status, headers, body) {
 // --- Gmail --------------------------------------------------------------------------------------
 
 /**
+ * What Gmail's page shows when a compose action answers with a reply draft (Gmail on the web, tried
+ * in a real account on 2026-11-23 with REPLY_AS_DRAFT on one message and a small attachment):
+ *
+ * - `createDraftReply('', { attachments })`: a blank reply box, no recipient and no attachment
+ *   chip, although the draft holds the file on Google's side (Drafts search finds it by its name);
+ * - `createDraftReply('Converted file attached.', { attachments })`: the recipient, the text and
+ *   the attachment chip;
+ * - `createDraftReply('', { htmlBody: '<p>…</p>', attachments })`: the same (Google's sample);
+ * - `createDraftReply(' ', { attachments })`: the recipient and the chip, the body looks empty.
+ *
+ * The same for a message the account sent to itself and one from another sender. Returns
+ * `{ to, body, attachments }` (recipients and attachment names as the box shows them).
+ */
+export function gmailReplyBox(draft) {
+  if (draft.body === '' && !draft.htmlBody) return { to: [], body: '', attachments: [] };
+  return {
+    to: [draft.to],
+    body: draft.htmlBody || draft.body,
+    attachments: draft.attachments.map((a) => a.name),
+  };
+}
+
+/**
  * GmailApp over `messages` ({ [id]: { token, from?, attachments: [{ name, bytes, contentType, inline }] } }).
  * `scope.phase` is 'trigger' while a contextual trigger runs and 'action' in a button's callback.
  * Reading the message needs `gmail.addons.current.message.action` in `consent`, a draft
- * `gmail.addons.current.action.compose`.
+ * `gmail.addons.current.action.compose`; reading a draft back needs the full Gmail scope, which the
+ * add-on does not have (refused in the real account on 2026-11-23).
  */
 export function fakeGmail(messages, scope, consent = fakeConsent()) {
   let current = null;
   const drafts = [];
-  const settings = { draftsReadable: true };
   const attachmentFake = (a) =>
     fakeBlob(a.bytes, a.contentType, a.name, 'GmailAttachment', {
       getSize: () => a.bytes.length,
@@ -616,35 +650,28 @@ export function fakeGmail(messages, scope, consent = fakeConsent()) {
         ];
         for (const k of Object.keys(options))
           if (!known.includes(k)) throw new TypeError(`createDraftReply: unknown option ${k}`);
-        const attachments = (options.attachments ?? []).map((b) => {
+        // (An array of this realm: the add-on's come from its own `vm` context.)
+        const attachments = Array.from(options.attachments ?? [], (b) => {
           const s = STATE.get(b);
           if (!s || (s.kind !== 'Blob' && s.kind !== 'GmailAttachment'))
             throw new TypeError('attachments: BlobSource[]');
           return { name: s.name, contentType: s.contentType, bytes: s.bytes };
         });
+        if (options.htmlBody !== undefined)
+          needString('GmailMessage', 'htmlBody', options.htmlBody);
         // A reply goes to the sender (the reply-to address); Gmail's own address book is not faked.
         const to = m.from ?? 'sender@example.com';
         const draft = { id: 'r' + (drafts.length + 1), replyTo: id, to, body, attachments };
+        if (options.htmlBody !== undefined) draft.htmlBody = options.htmlBody;
         drafts.push(draft);
         return strict(
           'GmailDraft',
           {
             getId: () => draft.id,
-            // The draft as a message: what the add-on reads back for its log. Google documents
-            // GmailDraft's methods with the full Gmail scope only: `draftsReadable` false refuses.
+            // Google documents GmailDraft's methods with the full Gmail scope only, which the
+            // manifest does not ask for: reading the draft back is refused.
             getMessage: () => {
-              if (!settings.draftsReadable)
-                throw permissionError('GmailDraft.getMessage', 'https://mail.google.com/');
-              return strict('GmailMessage', {
-                getTo: () => draft.to,
-                getAttachments: () =>
-                  draft.attachments.map((a) =>
-                    fakeBlob(a.bytes, a.contentType, a.name, 'GmailAttachment', {
-                      getSize: () => a.bytes.length,
-                      getHash: () => createHash('sha1').update(a.bytes).digest('hex'),
-                    }),
-                  ),
-              });
+              throw permissionError('GmailDraft.getMessage', 'https://mail.google.com/');
             },
           },
           { kind: 'GmailDraft', ...draft },
@@ -665,7 +692,7 @@ export function fakeGmail(messages, scope, consent = fakeConsent()) {
       return messageFake(id, m);
     },
   });
-  return { app, drafts, settings };
+  return { app, drafts };
 }
 
 // --- Drive (advanced service, v3) and Drive's REST for file bytes ------------------------------

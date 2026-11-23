@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.1.2
+
+- **Reply with the file attached** now opens the reply with the recipient and the converted file
+  attached, ready for you to write. Before, Gmail showed an empty reply box: no recipient and no file,
+  although the draft held the file. The add-on writes nothing in your reply.
+- The reply draft's line in the add-on's log no longer tries to read the draft back (Google does not
+  allow it with the add-on's permissions). It says how many files were attached, their size and type,
+  never a file name or an address.
+
 ## 1.1.1
 
 - Permissions: Google's consent screen now lets you tick each permission separately. When something

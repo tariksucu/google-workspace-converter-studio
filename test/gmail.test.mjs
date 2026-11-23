@@ -11,6 +11,7 @@ import {
   textOf,
   world,
 } from './harness.mjs';
+import { fakeBlob, fakeCardService, fakeGmail } from './fakes.mjs';
 
 /** Clicks a card's button the way Gmail does: its function, with its parameters. */
 function press(w, card, text, extra = {}) {
@@ -161,21 +162,92 @@ test('a HEIC photo to JPG: download, save to Drive, reply with it attached', () 
   assert.equal(w.gmail.drafts[0].replyTo, 'm1');
   assert.equal(w.gmail.drafts[0].attachments[0].name, 'IMG_0001.jpg');
   assert.equal(w.gmail.drafts[0].attachments[0].bytes.toString(), 'converted IMG_0001.HEIC to jpg');
+  assert.deepEqual(composed.replyBox.attachments, ['IMG_0001.jpg'], 'Gmail shows the file');
 
   // No key on links that carry their own token.
   for (const r of w.requests.filter((x) => x.url.includes('/download') || x.method === 'PUT'))
     assert.equal(r.headers.Authorization, undefined);
-  // One line about the reply draft for the project's log (what was attached, what the draft holds
-  // when read back): counts, sizes and the media type, never a file name or an address.
+  // One line about the reply draft for the project's log (what was attached): the count, the size
+  // and the media type, never a file name or an address.
   assert.deepEqual(w.logs, [
     [
       'log',
-      'Converter Studio add-on: reply draft made with 1 attachment, 30 bytes, application/octet-stream; read back: 1 attachment(s), 30 bytes, 1 recipient(s)',
+      'Converter Studio add-on: reply draft made with 1 attachment, 30 bytes, application/octet-stream',
     ],
   ]);
 });
 
-test('the reply draft: a bare media type on the file, and a draft that cannot be read back still goes out', () => {
+test('the reply draft opens in Gmail with its recipient and the converted file, and nothing of ours in the reply', () => {
+  const w = world();
+  const done = cardOf(
+    w.click(
+      'onConvertAttachment',
+      gmailEvent({ params: { index: '0', hash: hashOf(w, 'm1', 0) }, inputs: { to: 'jpg' } }),
+    ),
+  );
+  const reply = button(done, 'Reply with the file attached');
+  const composed = render(
+    w.click('onReplyWithResult', gmailEvent({ params: reply.compose.parameters })),
+  );
+  // What Gmail's page shows (an empty body would open a blank reply: no recipient, no file).
+  assert.deepEqual(composed.replyBox.to, ['sender@example.com']);
+  assert.deepEqual(composed.replyBox.attachments, ['IMG_0001.jpg']);
+  // The body is whitespace only: the reply looks empty, for the user to write in.
+  const [draft] = w.gmail.drafts;
+  assert.match(draft.body, /^\s+$/);
+  assert.equal(draft.htmlBody, undefined);
+  assert.equal(composed.replyBox.body.trim(), '');
+});
+
+test('the reply draft without the file still opens with its recipient and says why', () => {
+  const w = world();
+  // A result over Gmail's attachment limit: the card offers no reply, a stale card still may.
+  const done = cardOf(
+    w.click(
+      'onConvertAttachment',
+      gmailEvent({
+        messageId: 'other',
+        params: { index: '2', hash: hashOf(w, 'other', 2) },
+        inputs: { to: 'jpg' },
+      }),
+    ),
+  );
+  const { id } = button(done, 'Save to Google Drive').action.parameters;
+  const composed = render(
+    w.click('onReplyWithResult', gmailEvent({ messageId: 'other', params: { id } })),
+  );
+  assert.deepEqual(composed.replyBox, {
+    to: ['sender@example.com'],
+    body: 'Converter Studio could not attach the converted file: The converted file is too large to attach to an e-mail. Download it or save it to Drive instead.',
+    attachments: [],
+  });
+  assert.deepEqual(w.logs, [], 'an expected refusal is not logged');
+});
+
+test('the fake Gmail page replays the reply drafts tried in a real account on 2026-11-23', () => {
+  const scope = { phase: 'action' };
+  const gmail = fakeGmail(
+    { m: { token: 't', from: 'sender@example.com', attachments: [] } },
+    scope,
+  );
+  gmail.app.setCurrentMessageAccessToken('t');
+  const message = gmail.app.getMessageById('m');
+  const cards = fakeCardService();
+  const box = (body, options = {}) => {
+    const file = fakeBlob(Buffer.from('converted'), 'text/plain', 'note.txt');
+    const draft = message.createDraftReply(body, { ...options, attachments: [file] });
+    return render(cards.newComposeActionResponseBuilder().setGmailDraft(draft).build()).replyBox;
+  };
+  const shown = (body) => ({ to: ['sender@example.com'], body, attachments: ['note.txt'] });
+  assert.deepEqual(box(''), { to: [], body: '', attachments: [] }, 'A: blank');
+  assert.deepEqual(box('Converted file attached.'), shown('Converted file attached.'), 'B');
+  assert.deepEqual(box('', { htmlBody: '<p>Converted</p>' }), shown('<p>Converted</p>'), 'C');
+  assert.deepEqual(box(' '), shown(' '), 'G: one space');
+  // Reading a draft back needs the full Gmail scope, which the add-on does not have.
+  assert.throws(() => message.createDraftReply(' ').getMessage(), /mail\.google\.com/);
+});
+
+test('the reply draft: a bare media type on the file, one log line without its name or address', () => {
   const w = world();
   // The download's Content-Type with a parameter, as a server may send for text.
   const handler = w.api.handler;
@@ -198,19 +270,12 @@ test('the reply draft: a bare media type on the file, and a draft that cannot be
   assert.equal(composed.kind, 'ComposeActionResponse');
   assert.equal(w.gmail.drafts[0].attachments[0].contentType, 'text/plain');
   assert.equal(w.gmail.drafts[0].attachments[0].name, 'scan.txt');
+  assert.deepEqual(composed.replyBox.attachments, ['scan.txt']);
+  assert.equal(w.logs.length, 1);
   assert.match(
     w.logs[0][1],
-    /made with 1 attachment, \d+ bytes, text\/plain; read back: 1 attachment\(s\), \d+ bytes, 1 recipient\(s\)$/,
+    /^Converter Studio add-on: reply draft made with 1 attachment, \d+ bytes, text\/plain$/,
   );
-
-  // Google refuses to read the draft back: the log says so, the reply is made all the same.
-  w.gmail.settings.draftsReadable = false;
-  const again = render(
-    w.click('onReplyWithResult', gmailEvent({ params: reply.compose.parameters })),
-  );
-  assert.equal(again.kind, 'ComposeActionResponse');
-  assert.equal(w.gmail.drafts[1].attachments.length, 1);
-  assert.match(w.logs[1][1], /; read back: not readable \(Exception\)$/);
   assert.ok(!JSON.stringify(w.logs).includes('scan'), 'no file name in the log');
   assert.ok(!JSON.stringify(w.logs).includes('@'), 'no address in the log');
 });

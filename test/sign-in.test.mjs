@@ -39,7 +39,7 @@ test('Continue with Google beside an open message: a new free account, then the 
     ['/v1/account', `Bearer ${token}`],
   ]);
   const [exchange] = w.requests;
-  assert.equal(exchange.headers['X-Converter-Studio-Client'], 'google-workspace/1.1.1');
+  assert.equal(exchange.headers['X-Converter-Studio-Client'], 'google-workspace/1.1.2');
   assert.equal(w.api.state.exchanges[0].sub, '2002');
   assert.equal(w.api.state.accounts.get('2002').email, 'new@gmail.com');
 });

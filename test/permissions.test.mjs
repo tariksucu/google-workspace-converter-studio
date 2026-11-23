@@ -191,8 +191,11 @@ const CASES = [
     setup: (w) => converted(w, 'gmail', { index: '0', hash: sha1('heic bytes') }, { to: 'jpg' }),
     event: (w, params) => gmailEvent({ params }),
     needs: [G, SCOPE.message, SCOPE.compose, ...CS],
+    // Gmail shows the reply with the file attached (gmailReplyBox).
     works: (r, w) =>
-      render(r).kind === 'ComposeActionResponse' && w.gmail.drafts.at(-1).attachments.length === 1,
+      render(r).kind === 'ComposeActionResponse' &&
+      w.gmail.drafts.at(-1).attachments.length === 1 &&
+      render(r).replyBox.attachments.length === 1,
   },
   {
     name: 'onPickDriveFile',

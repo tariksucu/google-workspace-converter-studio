@@ -11,7 +11,7 @@
  */
 const CS_CONFIG = Object.freeze({
   /** This add-on's version (package.json says the same: test/package.test.mjs). */
-  version: '1.1.1',
+  version: '1.1.2',
   /** Names the add-on on its API calls (Converter Studio's statistics of its connectors). */
   clientName: 'google-workspace',
   /** The public API. A project editor can point a copy elsewhere (script property CS_API_BASE_URL). */
@@ -40,6 +40,16 @@ const CS_CONFIG = Object.freeze({
    * a converted file larger than this is offered as a download or saved to Drive instead.
    */
   maxReplyAttachmentBytes: 18 * 1000 * 1000,
+  /**
+   * The body of the reply draft that carries the converted file: one space, and nothing of ours.
+   * Gmail on the web shows a reply draft with an empty body as a blank reply box, without its
+   * recipient and without the attached file, although the draft holds both (seen in a real account
+   * on 2026-11-23: `createDraftReply('', { attachments })` opened blank; the same call with any
+   * non-empty body, even one space, or with an `htmlBody`, opened with the recipient and the
+   * attachment). One space keeps the reply looking empty, with the cursor in it, for the user to
+   * write.
+   */
+  replyDraftBody: ' ',
   /** Drive exports a Google Docs, Sheets or Slides file of at most 10 MB (Drive API files.export). */
   maxExportBytes: 10 * 1000 * 1000,
   /** The formats list is kept this long in the script cache (seconds; CacheService's maximum). */
