@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { loadAddOn } from '../tools/load.mjs';
-import { VALID_KEY } from './fake-api.mjs';
 import { fakeProperties, stateOf } from './fakes.mjs';
 
 const addOn = loadAddOn();
 const S = addOn.get('CsSettings');
+const Session = addOn.get('CsSession');
 const code = (fn) => {
   try {
     fn();
@@ -14,29 +14,6 @@ const code = (fn) => {
   }
   return null;
 };
-
-test('a pasted key is trimmed of spaces, quotes and "Bearer"; anything else is refused', () => {
-  assert.equal(S.normaliseKey(`  ${VALID_KEY}\n`), VALID_KEY);
-  assert.equal(S.normaliseKey(`"${VALID_KEY}"`), VALID_KEY);
-  assert.equal(S.normaliseKey(`Bearer ${VALID_KEY}`), VALID_KEY);
-  assert.equal(
-    code(() => S.normaliseKey('cvs_live_short')),
-    'badKey',
-  );
-  assert.equal(
-    code(() => S.normaliseKey('sk-live-' + 'x'.repeat(32))),
-    'badKey',
-  );
-  assert.equal(
-    code(() => S.normaliseKey('')),
-    'badKey',
-  );
-});
-
-test('the key is shown masked, never whole', () => {
-  assert.equal(S.maskKey(VALID_KEY), 'cvs_live_…O5p6');
-  assert.equal(S.maskKey(null), '');
-});
 
 test('the credit limit is a whole number from 0 to 1000', () => {
   assert.equal(S.parseMaxCredits('20'), 20);
@@ -66,33 +43,89 @@ test('the API address: https, or a test server on this computer', () => {
 });
 
 test('settings are read from the user’s properties, the address from the project’s', () => {
-  const user = fakeProperties({ CS_API_KEY: VALID_KEY, CS_MAX_CREDITS: '5' });
+  const user = fakeProperties({ CS_MAX_CREDITS: '5' });
   const script = fakeProperties({ CS_API_BASE_URL: 'http://localhost:8080/api' });
   assert.deepEqual(
     { ...S.read(user, script) },
-    { apiKey: VALID_KEY, maxCredits: 5, baseUrl: 'http://localhost:8080/api' },
+    { maxCredits: 5, baseUrl: 'http://localhost:8080/api' },
   );
   assert.deepEqual(
     { ...S.read(fakeProperties({ CS_MAX_CREDITS: 'junk' }), fakeProperties()) },
-    { apiKey: null, maxCredits: 20, baseUrl: 'https://converter.studio/api' },
+    { maxCredits: 20, baseUrl: 'https://converter.studio/api' },
   );
 });
 
-test('saving keeps the old key when the field is left empty; forgetting deletes only the key', () => {
-  const user = fakeProperties({ CS_API_KEY: VALID_KEY, CS_DRIVE_FOLDER_ID: 'f1' });
-  S.save(user, { apiKey: '', maxCredits: '7' });
-  assert.equal(user.getProperty('CS_API_KEY'), VALID_KEY);
+test('saving keeps the limit when the field is left empty, refuses a bad one', () => {
+  const user = fakeProperties({ CS_MAX_CREDITS: '7' });
+  S.save(user, { maxCredits: '' });
   assert.equal(user.getProperty('CS_MAX_CREDITS'), '7');
+  S.save(user, { maxCredits: '3' });
+  assert.equal(user.getProperty('CS_MAX_CREDITS'), '3');
   assert.equal(
-    code(() => S.save(user, { apiKey: 'nope', maxCredits: '7' })),
-    'badKey',
-  );
-  assert.equal(
-    code(() => S.save(user, { apiKey: '', maxCredits: 'x' })),
+    code(() => S.save(user, { maxCredits: 'x' })),
     'badMaxCredits',
   );
-  S.forget(user);
-  assert.equal(user.getProperty('CS_API_KEY'), null);
-  assert.equal(user.getProperty('CS_DRIVE_FOLDER_ID'), 'f1');
-  assert.deepEqual([...stateOf(user).map.keys()].sort(), ['CS_DRIVE_FOLDER_ID', 'CS_MAX_CREDITS']);
+});
+
+/** A session over fake properties; `exchange` answers like the API. */
+function session(initial = {}, clock = { now: 1_000_000 }) {
+  const user = fakeProperties(initial);
+  const exchanged = [];
+  let n = 0;
+  const s = Session.create({
+    user,
+    identityToken: () => 'id-token-' + n,
+    exchange: (idToken) => {
+      exchanged.push(idToken);
+      n++;
+      return { token: 'cvs_gws_' + n, expiresIn: 3600, newAccount: n === 1 };
+    },
+    now: () => clock.now,
+  });
+  return { s, user, exchanged, clock };
+}
+
+test('the session: kept while fresh, renewed in its last five minutes, gone after sign-out', () => {
+  const { s, user, exchanged, clock } = session();
+  assert.equal(s.signedIn(), false);
+  assert.equal(s.token(), null, 'signed out: no silent sign-in');
+  assert.deepEqual(exchanged, []);
+  assert.deepEqual({ ...s.signIn() }, { token: 'cvs_gws_1', newAccount: true });
+  assert.equal(s.signedIn(), true);
+  clock.now += 55 * 60_000 - 1;
+  assert.equal(s.token(), 'cvs_gws_1');
+  clock.now += 1;
+  assert.equal(s.token(), 'cvs_gws_2');
+  assert.deepEqual(exchanged, ['id-token-0', 'id-token-1']);
+  assert.equal(s.renew(), 'cvs_gws_3');
+  user.setProperty('CS_DRIVE_FOLDER_ID', 'f1');
+  s.signOut();
+  assert.equal(s.renew(), null, 'signed out: nothing renewed');
+  assert.deepEqual([...stateOf(user).map.keys()], ['CS_DRIVE_FOLDER_ID']);
+});
+
+test('a renewal that fails in the last minutes keeps the old session until it ends', () => {
+  const clock = { now: 1_000_000 };
+  const user = fakeProperties({
+    CS_SESSION: JSON.stringify({ token: 'cvs_gws_old', expiresAt: clock.now + 60_000 }),
+  });
+  const s = Session.create({
+    user,
+    identityToken: () => 'id-token',
+    exchange: () => {
+      throw new (addOn.get('CsErrors').CsError)('network');
+    },
+    now: () => clock.now,
+  });
+  assert.equal(s.token(), 'cvs_gws_old');
+  clock.now += 60_000;
+  assert.equal(
+    code(() => s.token()),
+    'network',
+  );
+});
+
+test('a stored session that is not one reads as signed out', () => {
+  for (const raw of ['{', '"x"', '{"token":1}', '{"token":"a"}'])
+    assert.equal(session({ CS_SESSION: raw }).s.signedIn(), false, raw);
 });

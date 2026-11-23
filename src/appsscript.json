@@ -17,7 +17,9 @@
     "https://www.googleapis.com/auth/gmail.addons.current.action.compose",
     "https://www.googleapis.com/auth/drive.addons.metadata.readonly",
     "https://www.googleapis.com/auth/drive.file",
-    "https://www.googleapis.com/auth/script.external_request"
+    "https://www.googleapis.com/auth/script.external_request",
+    "openid",
+    "https://www.googleapis.com/auth/userinfo.email"
   ],
   "urlFetchWhitelist": [
     "https://converter.studio/api/",
@@ -35,7 +37,11 @@
         "runFunction": "onHomepage",
         "enabled": true
       },
-      "openLinkUrlPrefixes": ["https://converter.studio/", "https://drive.google.com/"],
+      "openLinkUrlPrefixes": [
+        "https://converter.studio/",
+        "https://drive.google.com/",
+        "https://myaccount.google.com/"
+      ],
       "universalActions": [
         {
           "label": "Settings",

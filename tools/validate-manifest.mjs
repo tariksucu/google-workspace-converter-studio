@@ -52,6 +52,18 @@ export const SCOPES = {
     source:
       'not on a Google docs page; the Cloud console classes it sensitive (reported on Google Cloud Community, Oct 2026)',
   },
+  openid: {
+    use: "Sign in: ScriptApp.getIdentityToken() (Google's ID token for the user) needs it",
+    class: 'non-sensitive',
+    source:
+      'Sensitive scope verification page: "scopes that are necessary for Google Sign-In are pre-filled in the Non-sensitive scopes section"',
+  },
+  'https://www.googleapis.com/auth/userinfo.email': {
+    use: "Sign in: puts the user's verified e-mail address in the ID token (the account's e-mail)",
+    class: 'non-sensitive',
+    source:
+      'Sensitive scope verification page: "scopes that are necessary for Google Sign-In are pre-filled in the Non-sensitive scopes section"',
+  },
 };
 
 /** Scopes Google calls broad or restricted, which this add-on must never ask for. */
@@ -235,6 +247,12 @@ export function validate(manifest, { functions } = {}) {
     !scopes.includes('https://www.googleapis.com/auth/script.external_request')
   )
     errors.push('oauthScopes: UrlFetchApp needs script.external_request');
+  // Signing in with Google (src/Session.js): ScriptApp.getIdentityToken() gives nothing without
+  // `openid`, and a token without the e-mail without `userinfo.email`.
+  if (!scopes.includes('openid'))
+    errors.push('oauthScopes: signing in (ScriptApp.getIdentityToken) needs openid');
+  if (!scopes.includes('https://www.googleapis.com/auth/userinfo.email'))
+    errors.push("oauthScopes: signing in needs the account's e-mail (userinfo.email)");
   return { errors, warnings };
 }
 

@@ -1,20 +1,48 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { loadAddOn } from '../tools/load.mjs';
-import { VALID_KEY, fakeApi } from './fake-api.mjs';
-import { fakeBlob, fakeUrlFetch, fakeUtilities } from './fakes.mjs';
+import { ADA, AUDIENCE, SESSION, fakeApi } from './fake-api.mjs';
+import { fakeBlob, fakeIdToken, fakeProperties, fakeUrlFetch, fakeUtilities } from './fakes.mjs';
 
 const BASE = 'https://converter.studio/api';
 
-/** CsApi with a fake UrlFetchApp in front of the fake API; no other Apps Script service. */
-function setup({ apiKey = VALID_KEY, partBytes, handler, budgetMs = 24000 } = {}) {
+/**
+ * CsApi with a fake UrlFetchApp in front of the fake API, signed in through CsSession (stored
+ * session SESSION; renewals exchange an identity token for `google`); no other Apps Script service.
+ */
+function setup({ signedIn = true, google = ADA, partBytes, handler, budgetMs = 24000 } = {}) {
   const clock = { now: Date.UTC(2026, 10, 23, 9) };
   const api = fakeApi({ clock, partBytes });
   const net = fakeUrlFetch(handler ? (r) => handler(r, api) : api.handler);
   const addOn = loadAddOn();
   const utilities = fakeUtilities(clock);
-  const client = addOn.get('CsApi').createClient({
-    apiKey,
+  const user = fakeProperties(
+    signedIn
+      ? { CS_SESSION: JSON.stringify({ token: SESSION, expiresAt: clock.now + 3600_000 }) }
+      : {},
+  );
+  const identityTokens = [];
+  let client = null;
+  const session = addOn.get('CsSession').create({
+    user,
+    identityToken: () => {
+      const now = Math.floor(clock.now / 1000);
+      const token = fakeIdToken({
+        aud: AUDIENCE,
+        sub: google.sub,
+        email: google.email,
+        email_verified: true,
+        iat: now,
+        exp: now + 3600,
+      });
+      identityTokens.push(token);
+      return token;
+    },
+    exchange: (idToken) => client.exchange(idToken),
+    now: () => clock.now,
+  });
+  client = addOn.get('CsApi').createClient({
+    session,
     baseUrl: BASE,
     version: '1.0.0',
     urlFetch: net.urlFetch,
@@ -23,8 +51,10 @@ function setup({ apiKey = VALID_KEY, partBytes, handler, budgetMs = 24000 } = {}
     sleep: (ms) => utilities.sleep(ms),
     deadline: clock.now + budgetMs,
   });
-  return { client, api, clock, requests: net.requests, addOn };
+  return { client, session, user, api, clock, requests: net.requests, addOn, identityTokens };
 }
+
+const storedToken = (user) => JSON.parse(user.getProperty('CS_SESSION')).token;
 
 const blob = (text, name = null) => fakeBlob(Buffer.from(text), 'application/octet-stream', name);
 const caught = (fn) => {
@@ -36,16 +66,112 @@ const caught = (fn) => {
   throw new Error('did not throw');
 };
 
-test('the formats list needs no key; every request names the add-on and its version', () => {
-  const { client, requests } = setup({ apiKey: null });
+test('the formats list needs no sign-in; every request names the add-on and its version', () => {
+  const { client, requests } = setup({ signedIn: false });
   assert.equal(client.formats().formats.length, 67);
   assert.equal(requests[0].url, `${BASE}/v1/formats`);
   assert.equal(requests[0].headers['X-Converter-Studio-Client'], 'google-workspace/1.0.0');
   assert.equal(requests[0].headers.Authorization, undefined);
-  assert.equal(caught(() => client.account()).code, 'notConfigured');
+  assert.equal(caught(() => client.account()).code, 'notSignedIn');
+  assert.equal(requests.length, 1, 'signed out, nothing else is sent');
 });
 
-test('a conversion: the key goes to the API only, never to the upload or download link', () => {
+test('signing in: the identity token goes once, without a session; the answer is kept', () => {
+  const { session, user, requests, identityTokens, clock } = setup({
+    signedIn: false,
+    google: { sub: '2002', email: 'new@gmail.com' },
+  });
+  const started = session.signIn();
+  assert.equal(started.newAccount, true);
+  const [exchange] = requests;
+  assert.equal(exchange.url, `${BASE}/v1/google-workspace/session`);
+  assert.equal(exchange.method, 'POST');
+  assert.equal(exchange.headers.Authorization, undefined);
+  assert.deepEqual(JSON.parse(exchange.body), { idToken: identityTokens[0] });
+  assert.deepEqual(JSON.parse(user.getProperty('CS_SESSION')), {
+    token: started.token,
+    expiresAt: clock.now + 3600_000,
+  });
+  // Again: the same account.
+  assert.equal(session.signIn().newAccount, false);
+});
+
+test('a session about to end is renewed before the request, without a click', () => {
+  // One client over the hour (each click has its own in the add-on).
+  const { client, user, clock, requests, identityTokens } = setup({ budgetMs: 2 * 3600_000 });
+  clock.now += 54 * 60_000;
+  client.account();
+  assert.equal(identityTokens.length, 0, 'six minutes left: kept');
+  clock.now += 2 * 60_000;
+  assert.equal(client.account().email, ADA.email);
+  assert.equal(identityTokens.length, 1);
+  const renewed = storedToken(user);
+  assert.notEqual(renewed, SESSION);
+  assert.deepEqual(
+    requests.slice(-2).map((r) => [r.url.slice(BASE.length), r.headers.Authorization ?? null]),
+    [
+      ['/v1/google-workspace/session', null],
+      ['/v1/account', `Bearer ${renewed}`],
+    ],
+  );
+});
+
+test('a refused session is renewed once and the request sent again: one conversion, one charge', () => {
+  let ended = false;
+  const { client, user, api, requests } = setup({
+    // Converter Studio stops accepting the session just before the conversion starts.
+    handler: (r, api) => {
+      if (r.url.endsWith('/v1/conversions') && !ended) {
+        ended = true;
+        api.state.sessions.delete(SESSION);
+      }
+      return api.handler(r);
+    },
+  });
+  const up = client.upload(blob('heic bytes'), 'IMG_0001.HEIC', 10);
+  const view = client.start({ uploadId: up.id, to: 'jpg', maxCredits: 20 });
+  assert.equal(view.status, 'queued');
+  const starts = requests.filter((r) => r.url.endsWith('/v1/conversions'));
+  assert.equal(starts.length, 2);
+  assert.equal(starts[0].headers['Idempotency-Key'], starts[1].headers['Idempotency-Key']);
+  assert.equal(starts[0].headers.Authorization, `Bearer ${SESSION}`);
+  assert.equal(starts[1].headers.Authorization, `Bearer ${storedToken(user)}`);
+  assert.equal(api.state.conversions.size, 1);
+  assert.equal(api.state.exchanges.length, 1);
+});
+
+test('a renewal Converter Studio refuses is shown with its message, and not tried again', () => {
+  const { client, api } = setup({ google: { sub: '3003', email: '' } });
+  api.state.sessions.clear();
+  const e = caught(() => client.account());
+  assert.equal(e.code, 'googleSignInFailed');
+  assert.equal(e.status, 401);
+  assert.equal(
+    e.message,
+    "Signing in with Google didn't work. Please try again. If it keeps failing, sign in at converter.studio.",
+  );
+  assert.equal(api.state.exchanges.length, 1);
+});
+
+test('the sign-in switched off on the server, or no identity token from Google: said plainly', () => {
+  const off = setup({ signedIn: false });
+  off.api.state.signInOff = true;
+  const e = caught(() => off.session.signIn());
+  assert.equal(e.code, 'signInOff');
+  assert.match(e.message, /not available right now/);
+
+  const addOn = loadAddOn();
+  const user = fakeProperties();
+  const session = addOn.get('CsSession').create({
+    user,
+    identityToken: () => null,
+    exchange: () => assert.fail('nothing to exchange'),
+  });
+  assert.equal(caught(() => session.signIn()).code, 'noIdentity');
+  assert.equal(user.getProperty('CS_SESSION'), null);
+});
+
+test('a conversion: the session goes to the API only, never to the upload or download link', () => {
   const { client, requests } = setup();
   const up = client.upload(blob('heic bytes'), 'IMG_0001.HEIC', 10);
   assert.equal(up.format, 'heic');
@@ -58,7 +184,7 @@ test('a conversion: the key goes to the API only, never to the upload or downloa
   const [slot, put, start] = requests;
   assert.equal(slot.method, 'POST');
   assert.deepEqual(JSON.parse(slot.body), { fileName: 'IMG_0001.HEIC', size: 10 });
-  assert.equal(slot.headers.Authorization, `Bearer ${VALID_KEY}`);
+  assert.equal(slot.headers.Authorization, `Bearer ${SESSION}`);
   assert.equal(put.method, 'PUT');
   assert.equal(put.headers['Content-Type'], 'application/octet-stream');
   assert.equal(put.body.toString(), 'heic bytes');
@@ -112,17 +238,7 @@ test('large files go in parts with Upload-Offset when the API asks for smaller r
   assert.equal(up.format, 'txt');
 });
 
-test("the API's own error message is shown: wrong key, too large, failed conversion", () => {
-  const wrong = setup({ apiKey: 'cvs_live_' + 'z'.repeat(32) });
-  const e = caught(() => wrong.client.account());
-  assert.equal(e.code, 'invalidApiKey');
-  assert.equal(e.status, 401);
-  assert.equal(
-    e.message,
-    'This API key does not work. Create one on your account page at converter.studio.',
-  );
-  assert.ok(!e.message.includes('cvs_live_'));
-
+test("the API's own error message is shown: too large, failed conversion", () => {
   const { client } = setup();
   const big = caught(() => client.upload(blob('x'), 'film.mov', 60_000_000));
   assert.equal(big.code, 'sourceTooLarge');

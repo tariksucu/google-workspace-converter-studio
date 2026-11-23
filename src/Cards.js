@@ -1,4 +1,4 @@
-/* global CardService, CsFormats, CsSettings, CsViews, CS_CONFIG */
+/* global CardService, CsFormats, CsViews, CS_CONFIG */
 /* eslint @typescript-eslint/no-unused-vars: ["error", { "varsIgnorePattern": "^Cs[A-Z]" }] -- Apps Script shares top-level names across the project's files */
 
 /**
@@ -56,17 +56,27 @@ const CsCards = (function () {
     return h;
   }
 
-  /** The links every card's account section ends with. */
-  function accountLinks() {
-    return CardService.newButtonSet()
-      .addButton(linkButton('Get an API key', page('/account#api-keys')))
-      .addButton(linkButton('Create a free account', page('/sign-up')))
-      .addButton(linkButton('Pricing', page('/pricing')));
+  /** A grey line of small print. */
+  function note(html) {
+    return paragraph('<font color="#5f6368">' + html + '</font>');
   }
 
   /**
-   * The home and settings card: what the add-on does, the account, and the settings.
-   * @param {{ settings: object, account?: object | null, accountError?: string | null, host?: string }} model
+   * "Continue with Google": the wording Google's sign-in branding guidelines offer, with Google's
+   * standard-colour "G" on a white (outlined) button, as they require.
+   */
+  function signInButton() {
+    return CardService.newTextButton()
+      .setText('Continue with Google')
+      .setIconUrl(CS_CONFIG.googleIconUrl)
+      .setTextButtonStyle(CardService.TextButtonStyle.OUTLINED)
+      .setOnClickAction(action('onSignIn'));
+  }
+
+  /**
+   * The home and settings card: what the add-on does, then signing in, or the signed-in account
+   * and the settings.
+   * @param {{ settings: object, signedIn: boolean, account?: object | null, accountError?: string | null, host?: string }} model
    */
   function home(model) {
     const settings = model.settings;
@@ -84,38 +94,59 @@ const CsCards = (function () {
         ),
       );
     const account = CardService.newCardSection().setHeader('Your Converter Studio account');
-    if (settings.apiKey) {
-      account.addWidget(
-        CardService.newDecoratedText()
-          .setTopLabel('API key ' + CsSettings.maskKey(settings.apiKey))
-          .setText(escape(model.accountError || CsViews.accountLine(model.account) || 'Key saved'))
-          .setWrapText(true),
-      );
+    if (!model.signedIn) {
+      account
+        .addWidget(
+          paragraph(
+            'Sign in with your Google account to start. A free account gets 13 credits a day; most photos and documents cost 1 credit. If you already have a Converter Studio account with this Google account or its e-mail address, the add-on uses it.',
+          ),
+        )
+        .addWidget(signInButton())
+        // The words of the site's own sign-up.
+        .addWidget(
+          note(
+            'By creating an account, you agree to the <a href="' +
+              page('/terms') +
+              '">Terms of Service</a> and the <a href="' +
+              page('/privacy') +
+              '">Privacy policy</a>.',
+          ),
+        );
     } else {
-      account.addWidget(
-        paragraph(
-          'Paste an API key from your Converter Studio account to start. Free accounts get 13 credits a day; most photos and documents cost 1 credit.',
-        ),
-      );
+      const email = model.account && model.account.email;
+      account
+        .addWidget(
+          CardService.newDecoratedText()
+            .setTopLabel(email ? 'Signed in as ' + email : 'Signed in')
+            .setText(
+              escape(model.accountError || CsViews.accountLine(model.account) || 'Signed in'),
+            )
+            .setWrapText(true),
+        )
+        .addWidget(
+          CardService.newTextInput()
+            .setFieldName('maxCredits')
+            .setTitle('Ask before a conversion that costs more than (credits)')
+            .setValue(String(settings.maxCredits)),
+        )
+        .addWidget(
+          CardService.newButtonSet()
+            .addButton(button('Save', action('onSaveSettings'), true))
+            .addButton(button('Sign out', action('onSignOut'))),
+        )
+        .addWidget(
+          CardService.newButtonSet()
+            .addButton(linkButton('Your account', page('/account')))
+            .addButton(linkButton('Pricing', page('/pricing'))),
+        )
+        .addWidget(
+          note(
+            'Sign out forgets this add-on’s sign-in. To take away its access to your Google account, open your Google Account’s <a href="' +
+              CS_CONFIG.googleConnectionsUrl +
+              '">third-party connections</a>.',
+          ),
+        );
     }
-    account
-      .addWidget(
-        CardService.newTextInput()
-          .setFieldName('apiKey')
-          .setTitle(settings.apiKey ? 'Replace the API key' : 'API key')
-          .setHint('Starts with cvs_live_. Kept in your Google account, for this add-on only.'),
-      )
-      .addWidget(
-        CardService.newTextInput()
-          .setFieldName('maxCredits')
-          .setTitle('Ask before a conversion that costs more than (credits)')
-          .setValue(String(settings.maxCredits)),
-      );
-    const buttons = CardService.newButtonSet().addButton(
-      button('Save', action('onSaveSettings'), true),
-    );
-    if (settings.apiKey) buttons.addButton(button('Forget my key', action('onForgetKey')));
-    account.addWidget(buttons).addWidget(accountLinks());
     const privacy = CardService.newCardSection()
       .addWidget(
         paragraph(

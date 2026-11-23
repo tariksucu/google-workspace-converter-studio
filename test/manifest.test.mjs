@@ -32,8 +32,18 @@ test('the scopes: per-message and per-file only, never full Gmail or Drive', () 
       ['drive.addons.metadata.readonly', 'not classed in Google docs'],
       ['drive.file', 'non-sensitive'],
       ['script.external_request', 'sensitive'],
+      // Signing in with Google: the identity token and the e-mail in it. No `profile`.
+      ['openid', 'non-sensitive'],
+      ['userinfo.email', 'non-sensitive'],
     ],
   );
+  const signIn = (scopes) =>
+    validate({ ...MANIFEST, oauthScopes: scopes }, { functions }).errors.filter((e) =>
+      e.includes('signing in'),
+    );
+  assert.deepEqual(signIn(MANIFEST.oauthScopes), []);
+  assert.equal(signIn(MANIFEST.oauthScopes.filter((s) => s !== 'openid')).length, 1);
+  assert.equal(signIn(MANIFEST.oauthScopes.filter((s) => !s.endsWith('userinfo.email'))).length, 1);
   for (const broad of [
     'https://mail.google.com/',
     'https://www.googleapis.com/auth/drive',
@@ -86,9 +96,11 @@ test('links and fetches stay on Converter Studio and Drive', () => {
     'https://converter.studio/api/',
     'https://www.googleapis.com/drive/v3/files/',
   ]);
+  // Google Account's third-party connections: where the add-on's access is taken away.
   assert.deepEqual(MANIFEST.addOns.common.openLinkUrlPrefixes, [
     'https://converter.studio/',
     'https://drive.google.com/',
+    'https://myaccount.google.com/',
   ]);
   // The name matches the OAuth consent screen and the listing ("Converter Studio").
   assert.equal(MANIFEST.addOns.common.name, 'Converter Studio');

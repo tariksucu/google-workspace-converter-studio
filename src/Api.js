@@ -12,9 +12,11 @@
  * Every call stops before the add-on's time is up (Apps Script ends an add-on execution after 30
  * seconds): a conversion that is still running is picked up later with `get`.
  *
- * The API key only goes with requests to the API's own address (`Authorization: Bearer`). Upload
- * and download links carry their own tokens, so the key is never sent with them, and a link to
- * another address is refused. The key never appears in an error.
+ * Requests are signed in with the add-on's session (Session.js): `Authorization: Bearer`, only to
+ * the API's own address. Upload and download links carry their own tokens, so the session is never
+ * sent with them, and a link to another address is refused. When Converter Studio refuses the
+ * session (401), the client signs in again with Google once and sends the request again. Neither
+ * the session nor Google's identity token ever appears in an error.
  */
 const CsApi = (function () {
   /** States after which a conversion changes no more on its own. */
@@ -80,7 +82,7 @@ const CsApi = (function () {
       // Not JSON (a proxy's error page): the status says enough.
     }
     if (!code) {
-      if (status === 401) code = 'invalidApiKey';
+      if (status === 401) code = 'googleSignInFailed';
       else if (status === 402) code = 'notEnoughCredits';
       else if (status === 413) code = 'fileTooLarge';
       else if (status === 429) code = 'tooManyRequests';
@@ -97,7 +99,7 @@ const CsApi = (function () {
 
   /**
    * @param {{
-   *   apiKey: string | null,
+   *   session: { token: () => string | null, renew: () => string | null } | null,
    *   baseUrl: string,
    *   version: string,
    *   urlFetch: { fetch: (url: string, params: object) => any },
@@ -169,13 +171,17 @@ const CsApi = (function () {
       }
     }
 
-    /** A request to the API, with the key unless `auth` is false; its JSON body. */
+    /**
+     * A request to the API, signed in unless `auth` is false; its JSON body. `token`: the session
+     * to use (a request sent again after a renewal); otherwise the stored one.
+     */
     function json(method, path, body, settings) {
       const s = settings || {};
       const auth = s.auth !== false;
-      if (auth && !options.apiKey) throw new CsErrors.CsError('notConfigured');
+      const token = auth ? s.token || (options.session && options.session.token()) : null;
+      if (auth && !token) throw new CsErrors.CsError('notSignedIn');
       const headers = { Accept: 'application/json', 'X-Converter-Studio-Client': clientHeader };
-      if (auth) headers.Authorization = 'Bearer ' + options.apiKey;
+      if (auth) headers.Authorization = 'Bearer ' + token;
       if (s.idempotencyKey) headers['Idempotency-Key'] = s.idempotencyKey;
       // UrlFetchApp's methods are written in lower case ("get, delete, patch, post, or put").
       const params = { method: method.toLowerCase(), headers };
@@ -184,12 +190,19 @@ const CsApi = (function () {
         params.payload = JSON.stringify(body);
       }
       if (s.timeoutSeconds !== undefined) params.timeoutSeconds = s.timeoutSeconds;
-      const response = send(
-        baseUrl + path,
-        params,
-        'network',
-        s.retries === undefined ? 2 : s.retries,
-      );
+      let response;
+      try {
+        response = send(baseUrl + path, params, 'network', s.retries === undefined ? 2 : s.retries);
+      } catch (error) {
+        // The session was refused (its hour is up, or Converter Studio's keys changed): sign in
+        // again with Google, once, and send the same request again (with the same
+        // Idempotency-Key, so a conversion is never started twice).
+        if (auth && !s.token && error instanceof CsErrors.CsError && error.status === 401) {
+          const renewed = options.session.renew();
+          if (renewed) return json(method, path, body, Object.assign({}, s, { token: renewed }));
+        }
+        throw error;
+      }
       try {
         return JSON.parse(response.getContentText());
       } catch {
@@ -197,12 +210,33 @@ const CsApi = (function () {
       }
     }
 
-    /** The formats the API reads and what each converts to. Needs no key. */
+    /**
+     * Signs in: Google's identity token for a session (`POST /v1/google-workspace/session`).
+     * `signUp` false (a renewal): Converter Studio finds the account but makes none.
+     * @returns {{ token: string, expiresIn: number, newAccount: boolean }}
+     */
+    function exchange(idToken, signUp) {
+      const body = signUp === false ? { idToken, signUp: false } : { idToken };
+      let answer;
+      try {
+        answer = json('POST', '/v1/google-workspace/session', body, { auth: false });
+      } catch (error) {
+        // The path answers 404 while Converter Studio has the add-on's sign-in switched off.
+        if (error instanceof CsErrors.CsError && error.status === 404)
+          throw new CsErrors.CsError('signInOff');
+        throw error;
+      }
+      if (!answer || typeof answer.token !== 'string' || !(answer.expiresIn > 0))
+        throw new CsErrors.CsError('notJson');
+      return answer;
+    }
+
+    /** The formats the API reads and what each converts to. Needs no sign-in. */
     function formats() {
       return json('GET', '/v1/formats', undefined, { auth: false });
     }
 
-    /** The account behind the key: plan and credits. */
+    /** The signed-in account: e-mail, plan and credits. */
     function account() {
       return json('GET', '/v1/account');
     }
@@ -300,8 +334,8 @@ const CsApi = (function () {
     }
 
     /**
-     * The converted file as an Apps Script Blob. The link carries its own token (no key is
-     * sent) and must be on the API's address.
+     * The converted file as an Apps Script Blob. The link carries its own token (the session is
+     * not sent) and must be on the API's address.
      */
     function download(downloadUrl) {
       checkLink(downloadUrl);
@@ -322,6 +356,7 @@ const CsApi = (function () {
       clientHeader,
       remaining,
       checkLink,
+      exchange,
       formats,
       account,
       upload,

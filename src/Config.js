@@ -11,12 +11,20 @@
  */
 const CS_CONFIG = Object.freeze({
   /** This add-on's version (package.json says the same: test/package.test.mjs). */
-  version: '1.0.0',
+  version: '1.1.0',
   /** Names the add-on on its API calls (Converter Studio's statistics of its connectors). */
   clientName: 'google-workspace',
   /** The public API. A project editor can point a copy elsewhere (script property CS_API_BASE_URL). */
   defaultBaseUrl: 'https://converter.studio/api',
   siteUrl: 'https://converter.studio',
+  /**
+   * The sign-in button's icon: Google's standard-colour "G", which Google's sign-in branding
+   * guidelines require on a "Continue with Google" button (Google's own copy of it).
+   */
+  googleIconUrl:
+    'https://www.gstatic.com/images/branding/googleg/1x/googleg_standard_color_48dp.png',
+  /** Where a user takes away the add-on's access to the Google account (Sign out says so). */
+  googleConnectionsUrl: 'https://myaccount.google.com/connections',
   /** Conversions that cost more than this many credits wait for a click (user setting). */
   defaultMaxCredits: 20,
   /**

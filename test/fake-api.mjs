@@ -7,13 +7,25 @@
  *
  * Scenarios by the uploaded file's name: "slow" takes 90 s, "quote" costs 30 credits, "broken"
  * fails, "big" reports a 30 MB result; anything else is done after 3 s for 1 credit.
+ *
+ * Sign-in as the real API does it (`POST /v1/google-workspace/session`): an identity token issued
+ * to AUDIENCE, not expired, with a verified e-mail, becomes an hour's session; a new Google
+ * account gets a free account. The fake reads the token's claims without a signature (the real
+ * API's checks are tested in apps/api and by e2e/run.mjs).
  */
 import { readFileSync } from 'node:fs';
 
-export const VALID_KEY = 'cvs_live_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6';
+/** The add-on's OAuth client id, which identity tokens must be issued to. */
+export const AUDIENCE = '123456789012-addon.apps.googleusercontent.com';
+/** The Google account a test world signs in as, with a Pro account behind it. */
+export const ADA = { sub: '1001', email: 'reader@example.com' };
+/** A session the fake API knows from the start: a world begins signed in with it. */
+export const SESSION = 'cvs_gws_' + 'S'.repeat(48);
 export const FORMATS = JSON.parse(
   readFileSync(new URL('./fixtures/formats.json', import.meta.url), 'utf8'),
 );
+const SIGN_IN_FAILED =
+  "Signing in with Google didn't work. Please try again. If it keeps failing, sign in at converter.studio.";
 
 const json = (status, body, headers = {}) => ({
   status,
@@ -31,7 +43,25 @@ export function fakeApi({
   const uploads = new Map();
   const conversions = new Map();
   const keys = new Map();
-  const state = { uploads, conversions, keys, failNext: null, dropNext: null, partBytes };
+  /** Converter Studio accounts by Google id, and the sessions handed out (token → Google id). */
+  const accounts = new Map([[ADA.sub, { email: ADA.email, plan: 'pro', credits: 480 }]]);
+  const sessions = new Map([[SESSION, { sub: ADA.sub, expiresAt: clock.now + 3600_000 }]]);
+  const state = {
+    uploads,
+    conversions,
+    keys,
+    accounts,
+    sessions,
+    /** The claims of every identity token sent to the exchange. */
+    exchanges: [],
+    /** E-mails of accounts the exchange will not join (unverified address): 409. */
+    notLinked: new Set(),
+    /** The add-on's sign-in switched off on the server: the exchange is 404. */
+    signInOff: false,
+    failNext: null,
+    dropNext: null,
+    partBytes,
+  };
   let n = 0;
 
   const formatOf = (name) => {
@@ -93,7 +123,9 @@ export function fakeApi({
     }
     const url = new URL(request.url);
     const path = url.pathname.slice(new URL(base).pathname.length);
-    const authorised = request.headers.Authorization === `Bearer ${VALID_KEY}`;
+    const bearer = String(request.headers.Authorization ?? '').replace(/^Bearer /, '');
+    const live = sessions.get(bearer);
+    const account = live && live.expiresAt > clock.now ? accounts.get(live.sub) : null;
     const body = () => JSON.parse(request.body?.toString('utf8') ?? 'null');
 
     if (request.method === 'GET' && path === '/v1/formats')
@@ -133,15 +165,53 @@ export function fakeApi({
       return json(200, { status: 'ready', file: { format: formatOf(u.fileName) } });
     }
 
-    if (!authorised)
-      return fail(
-        401,
-        'invalidApiKey',
-        'This API key does not work. Create one on your account page at converter.studio.',
-      );
+    if (request.method === 'POST' && path === '/v1/google-workspace/session') {
+      // Switched off, the path is unknown to the server: its 404 has no message.
+      if (state.signInOff) return json(404, { error: 'notFound' });
+      let claims = null;
+      try {
+        claims = JSON.parse(Buffer.from(body().idToken.split('.')[1], 'base64url').toString());
+      } catch {
+        // Not a token.
+      }
+      state.exchanges.push(claims);
+      const refuse = (reason) => fail(401, 'googleSignInFailed', SIGN_IN_FAILED, { reason });
+      if (!claims) return refuse('malformed');
+      if (claims.aud !== AUDIENCE) return refuse('audience');
+      if (!(claims.exp * 1000 > clock.now)) return refuse('expired');
+      if (!claims.email) return refuse('noEmail');
+      if (claims.email_verified !== true) return refuse('emailUnverified');
+      if (state.notLinked.has(claims.email))
+        return fail(
+          409,
+          'googleAccountNotLinked',
+          "An account with this email address already exists at converter.studio, but the address isn't verified yet. Sign in there with your password and we'll send you a link to verify it, then try again.",
+        );
+      const newAccount = !accounts.has(claims.sub);
+      // A renewal finds the account but makes none.
+      if (newAccount && body().signUp === false) return refuse('noAccount');
+      if (newAccount) accounts.set(claims.sub, { email: claims.email, plan: 'guest', credits: 13 });
+      const token = `cvs_gws_fake${++n}`;
+      sessions.set(token, { sub: claims.sub, expiresAt: clock.now + 3600_000 });
+      return json(200, {
+        token,
+        tokenType: 'Bearer',
+        expiresAt: new Date(clock.now + 3600_000).toISOString(),
+        expiresIn: 3600,
+        newAccount,
+      });
+    }
+
+    if (!account)
+      return fail(401, 'googleSignInFailed', SIGN_IN_FAILED, { reason: 'sessionEnded' });
 
     if (request.method === 'GET' && path === '/v1/account')
-      return json(200, { email: 'reader@example.com', plan: 'pro', credits: 480, allApps: true });
+      return json(200, {
+        email: account.email,
+        plan: account.plan,
+        credits: account.credits,
+        allApps: account.plan !== 'guest',
+      });
 
     if (request.method === 'POST' && path === '/v1/uploads') {
       const { fileName, size } = body();

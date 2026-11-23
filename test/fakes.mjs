@@ -201,6 +201,8 @@ function checkButton(button) {
     (k) => s[k] !== undefined,
   );
   if (handlers.length !== 1) throw new Error(`TextButton "${s.text}": ${handlers.length} handlers`);
+  if (s.iconUrl !== undefined && !/^https:\/\/\S+$/.test(s.iconUrl))
+    throw new Error(`TextButton "${s.text}": the icon must be a public https URL`);
   if (s.onClickAction) checkAction(s.onClickAction);
   if (s.openLink) checkOpenLink(s.openLink);
   if (s.composeAction) checkAction(s.composeAction[0]);
@@ -212,6 +214,10 @@ function checkWidget(widget) {
   switch (s.kind) {
     case 'TextParagraph':
       if (!isString(s.text) || !s.text) throw new Error('TextParagraph: no text');
+      // Links in text open like OpenLinks: on the manifest's prefixes only.
+      for (const [, url] of s.text.matchAll(/<a href="([^"]*)">/g))
+        if (!matchesPrefix(url, linkPrefixes))
+          throw new Error(`link ${url} matches no openLinkUrlPrefixes entry`);
       break;
     case 'DecoratedText':
       if (!isString(s.text) || !s.text) throw new Error('DecoratedText: no text');
@@ -733,6 +739,23 @@ export function fakeUtilities(clock) {
   });
 }
 
-export function fakeScriptApp(token) {
-  return strict('ScriptApp', { getOAuthToken: () => token });
+/**
+ * ScriptApp: the add-on's own OAuth token (for Drive) and Google's identity token for the user,
+ * from `identity()` (null, as Google answers, when the `openid` scope is not in the manifest).
+ */
+export function fakeScriptApp(token, identity = () => null) {
+  const hasOpenId = (MANIFEST.oauthScopes ?? []).includes('openid');
+  return strict('ScriptApp', {
+    getOAuthToken: () => token,
+    getIdentityToken: () => (hasOpenId ? identity() : null),
+  });
+}
+
+/**
+ * Google's identity token for a user, as the fake API reads it: a JWT's shape (header, claims,
+ * signature), unsigned. Real tokens are checked by the real API (e2e/run.mjs).
+ */
+export function fakeIdToken(claims) {
+  const part = (value) => Buffer.from(JSON.stringify(value)).toString('base64url');
+  return `${part({ alg: 'RS256', kid: 'fake', typ: 'JWT' })}.${part(claims)}.fake-signature`;
 }

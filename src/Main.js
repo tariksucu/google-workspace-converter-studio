@@ -1,5 +1,5 @@
 /* global CacheService, CardService, PropertiesService, ScriptApp, UrlFetchApp, Utilities, Drive */
-/* global CsApi, CsCards, CsDrive, CsErrors, CsFlow, CsFormats, CsGmail, CsSettings, CsViews, CS_CONFIG */
+/* global CsApi, CsCards, CsDrive, CsErrors, CsFlow, CsFormats, CsGmail, CsSession, CsSettings, CsViews, CS_CONFIG */
 /* eslint @typescript-eslint/no-unused-vars: ["error", { "varsIgnorePattern": "^on[A-Z]" }] -- Google calls these by name (appsscript.json and card actions) */
 
 /**
@@ -8,15 +8,22 @@
  * over to the plain-JavaScript parts.
  */
 
-/** Settings, the API client and the clock for one execution (Apps Script gives it 30 seconds). */
+/**
+ * Settings, the sign-in, the API client and the clock for one execution (Apps Script gives it 30
+ * seconds). The session signs in with Google's identity token for the user, through the client.
+ */
 function csContext() {
   const started = Date.now();
-  const settings = CsSettings.read(
-    PropertiesService.getUserProperties(),
-    PropertiesService.getScriptProperties(),
-  );
-  const client = CsApi.createClient({
-    apiKey: settings.apiKey,
+  const user = PropertiesService.getUserProperties();
+  const settings = CsSettings.read(user, PropertiesService.getScriptProperties());
+  let client = null;
+  const session = CsSession.create({
+    user,
+    identityToken: () => ScriptApp.getIdentityToken(),
+    exchange: (idToken, signUp) => client.exchange(idToken, signUp),
+  });
+  client = CsApi.createClient({
+    session,
     baseUrl: settings.baseUrl,
     version: CS_CONFIG.version,
     urlFetch: UrlFetchApp,
@@ -24,7 +31,12 @@ function csContext() {
     sleep: (ms) => Utilities.sleep(ms),
     deadline: started + CS_CONFIG.budgetMs,
   });
-  return { settings, client };
+  return { settings, session, client };
+}
+
+/** Which app the add-on runs in. */
+function csHost(e) {
+  return e && e.commonEventObject && e.commonEventObject.hostApp === 'DRIVE' ? 'drive' : 'gmail';
 }
 
 /** The formats list, from the script cache (shared by all users: it holds nothing personal). */
@@ -94,41 +106,45 @@ function csLog(error) {
   console.error('Converter Studio add-on: ' + (error && error.stack ? error.stack : String(error)));
 }
 
-/** The home card, with the account's plan and credits when a key is saved. */
-function csHomeCard(host) {
-  const ctx = csContext();
-  let account = null;
+/**
+ * The home card: signing in, or the signed-in account's e-mail, plan and credits. `account`: one
+ * already fetched in this click.
+ */
+function csHomeCard(host, ctx, account) {
+  const c = ctx || csContext();
+  let shown = account || null;
   let accountError = null;
-  if (ctx.settings.apiKey) {
+  if (c.session.signedIn() && !shown) {
     try {
-      account = ctx.client.account();
+      shown = c.client.account();
     } catch (error) {
+      csLog(error);
       accountError = CsErrors.asCsError(error).message;
     }
   }
-  return CsCards.home({ settings: ctx.settings, account, accountError, host });
+  // Asked again: a renewal that found no account (deleted since) has signed out.
+  const signedIn = c.session.signedIn();
+  return CsCards.home({ settings: c.settings, signedIn, account: shown, accountError, host });
 }
 
 // --- Triggers (appsscript.json) ----------------------------------------------------------------
 
 /** Homepage in Gmail and Drive. */
 function onHomepage(e) {
-  const host =
-    e && e.commonEventObject && e.commonEventObject.hostApp === 'DRIVE' ? 'drive' : 'gmail';
-  return [csHomeCard(host)];
+  return [csHomeCard(csHost(e))];
 }
 
 /** Gmail: a message is open. Nothing of it is read here. */
 function onGmailMessageOpen() {
   const ctx = csContext();
-  if (!ctx.settings.apiKey) return [csHomeCard('gmail')];
+  if (!ctx.session.signedIn()) return [csHomeCard('gmail', ctx)];
   return [CsCards.message()];
 }
 
 /** Drive: files or folders are selected. */
 function onDriveItemsSelected(e) {
   const ctx = csContext();
-  if (!ctx.settings.apiKey) return [csHomeCard('drive')];
+  if (!ctx.session.signedIn()) return [csHomeCard('drive', ctx)];
   const items = (e && e.drive && e.drive.selectedItems) || [];
   if (!items.length) return [csHomeCard('drive')];
   if (items.length > 1) return [CsCards.driveItems(items)];
@@ -161,55 +177,69 @@ function csDriveFileCard(ctx, item) {
   );
 }
 
-// --- Settings ----------------------------------------------------------------------------------
+// --- Sign-in and settings ----------------------------------------------------------------------
+
+/**
+ * "Continue with Google": signs in with the user's Google account (Converter Studio finds its
+ * account or makes a free one), then carries on where the user was: the open message, the
+ * selected Drive file, or the home card.
+ */
+function onSignIn(e) {
+  return csAct(() => {
+    const ctx = csContext();
+    const started = ctx.session.signIn();
+    const account = ctx.client.account();
+    const line = CsViews.accountLine(account);
+    return CsCards.update(
+      csAfterSignIn(e, ctx, account),
+      (started.newAccount ? 'Your free Converter Studio account is ready. ' : 'Signed in. ') + line,
+    );
+  });
+}
+
+/** The card the user was about to see before signing in. */
+function csAfterSignIn(e, ctx, account) {
+  const host = csHost(e);
+  if (host === 'gmail' && e.gmail && e.gmail.messageId) return CsCards.message();
+  const items = (host === 'drive' && e.drive && e.drive.selectedItems) || [];
+  if (items.length > 1) return CsCards.driveItems(items);
+  if (items.length === 1) {
+    try {
+      return csDriveFileCard(ctx, items[0]);
+    } catch (error) {
+      return CsCards.notice('Convert a Drive file', CsErrors.asCsError(error).message, true);
+    }
+  }
+  return csHomeCard(host, ctx, account);
+}
+
+/** "Sign out": forgets the add-on's session; the add-on asks to sign in again. */
+function onSignOut(e) {
+  return csAct(() => {
+    CsSession.forget(PropertiesService.getUserProperties());
+    return CsCards.update(csHomeCard(csHost(e)), 'Signed out of Converter Studio.');
+  });
+}
 
 /** Universal action (the ⋮ menu): the settings card. */
 function onShowSettings(e) {
-  const host =
-    e && e.commonEventObject && e.commonEventObject.hostApp === 'DRIVE' ? 'drive' : 'gmail';
   return CardService.newUniversalActionResponseBuilder()
-    .displayAddOnCards([csHomeCard(host)])
+    .displayAddOnCards([csHomeCard(csHost(e))])
     .build();
 }
 
 /** A "Settings" button inside a card. */
 function onShowSettingsCard(e) {
-  const host =
-    e && e.commonEventObject && e.commonEventObject.hostApp === 'DRIVE' ? 'drive' : 'gmail';
-  return CsCards.push(csHomeCard(host));
+  return CsCards.push(csHomeCard(csHost(e)));
 }
 
-/** Saves the key (after checking it with Converter Studio) and the credit limit. */
+/** Saves the credit limit. */
 function onSaveSettings(e) {
   return csAct(() => {
-    const user = PropertiesService.getUserProperties();
-    const rawKey = csInput(e, 'apiKey')[0] || '';
-    const rawLimit = csInput(e, 'maxCredits')[0];
-    let line = null;
-    if (rawKey.trim()) {
-      const key = CsSettings.normaliseKey(rawKey);
-      const ctx = csContext();
-      const client = CsApi.createClient({
-        apiKey: key,
-        baseUrl: ctx.settings.baseUrl,
-        version: CS_CONFIG.version,
-        urlFetch: UrlFetchApp,
-        newKey: () => Utilities.getUuid(),
-      });
-      line = CsViews.accountLine(client.account());
-    }
-    CsSettings.save(user, { apiKey: rawKey, maxCredits: rawLimit });
-    const host = e.commonEventObject && e.commonEventObject.hostApp === 'DRIVE' ? 'drive' : 'gmail';
-    return CsCards.update(csHomeCard(host), line ? 'Key saved. ' + line : 'Settings saved.');
-  });
-}
-
-/** Forgets the key. */
-function onForgetKey(e) {
-  return csAct(() => {
-    CsSettings.forget(PropertiesService.getUserProperties());
-    const host = e.commonEventObject && e.commonEventObject.hostApp === 'DRIVE' ? 'drive' : 'gmail';
-    return CsCards.update(csHomeCard(host), 'The API key is forgotten.');
+    CsSettings.save(PropertiesService.getUserProperties(), {
+      maxCredits: csInput(e, 'maxCredits')[0],
+    });
+    return CsCards.update(csHomeCard(csHost(e)), 'Settings saved.');
   });
 }
 

@@ -3,14 +3,19 @@
 /**
  * Why something did not happen, as a fixed list of codes. The text shown is the API's own
  * `error.message` when the API sent one, and the plain-English words below otherwise. No message
- * ever contains the API key.
+ * ever contains the session or Google's identity token.
  */
 const CsErrors = (function () {
   /** Words for the add-on's own codes, and fallbacks for the API's when it sent no message. */
   const TEXT = {
     // The add-on's own.
-    notConfigured: 'Add your Converter Studio API key first (Settings).',
-    badKey: 'That does not look like a Converter Studio API key (it starts with cvs_live_).',
+    notSignedIn: 'Sign in to Converter Studio with your Google account first.',
+    noIdentity:
+      'Google did not give the add-on your sign-in. Open the add-on again and allow the permissions it asks for.',
+    accountGone:
+      'Your Converter Studio account no longer exists, so the add-on signed out. Click Continue with Google to make a new free account.',
+    signInOff:
+      'Signing in to Converter Studio from this add-on is not available right now. Try again later.',
     badMaxCredits: 'The credit limit must be a whole number from 0 to 1000.',
     badBaseUrl: 'The Converter Studio address must be an https:// address.',
     network: 'Converter Studio could not be reached. Try again in a moment.',
@@ -37,7 +42,9 @@ const CsErrors = (function () {
       'The converted file is too large to attach to an e-mail. Download it or save it to Drive instead.',
     notDone: 'The conversion is not finished yet.',
     // The API's (`{ error: { code, message } }`), for answers without a message.
-    invalidApiKey: 'The Converter Studio API key does not work (wrong or deleted).',
+    googleSignInFailed: 'Signing in with Google did not work. Please try again.',
+    googleAccountNotLinked:
+      'An account with this e-mail address already exists at converter.studio, but the address is not verified yet. Sign in there with your password to verify it, then try again.',
     notEnoughCredits: 'Not enough credits left on the Converter Studio account.',
     dailyLimit: "The Converter Studio account's daily credits are used up.",
     monthlyLimit: "The Converter Studio account's monthly credits are used up.",

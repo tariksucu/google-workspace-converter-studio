@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
-  VALID_KEY,
   actionNames,
   button,
   buttons,
@@ -20,53 +19,50 @@ function press(w, card, text, extra = {}) {
   return w.click(action.functionName, gmailEvent({ params: action.parameters, ...extra }));
 }
 
-test('without a key, the homepage and an open message ask for one', () => {
+test('signed out, the homepage and an open message offer "Continue with Google" and the terms', () => {
   const w = world({ user: {} });
   const home = cardOf(w.trigger('onHomepage', gmailEvent()));
-  assert.match(textOf(home), /Paste an API key/);
+  assert.equal(home.name, 'home');
   assert.deepEqual(
     buttons(home).map((b) => b.text),
-    ['Save', 'Get an API key', 'Create a free account', 'Pricing', 'Privacy policy', 'Help'],
+    ['Continue with Google', 'Privacy policy', 'Help'],
   );
-  assert.equal(
-    button(home, 'Get an API key').openLink,
-    'https://converter.studio/account#api-keys',
+  const signIn = home.sections[1].widgets[1];
+  assert.equal(signIn.text, 'Continue with Google');
+  assert.equal(signIn.textButtonStyle, 'TextButtonStyle.OUTLINED');
+  assert.match(signIn.iconUrl, /^https:\/\/www\.gstatic\.com\/.*googleg_standard_color/);
+  assert.equal(signIn.onClickAction.functionName, 'onSignIn');
+  // The site's own sign-up words, with its terms and privacy pages.
+  assert.match(
+    home.sections[1].widgets[2].text,
+    /By creating an account, you agree to the <a href="https:\/\/converter\.studio\/terms">Terms of Service<\/a> and the <a href="https:\/\/converter\.studio\/privacy">Privacy policy<\/a>\./,
   );
+  assert.ok(!/API key|cvs_live_/.test(textOf(home)), 'no API key anywhere');
   const opened = cardOf(w.trigger('onGmailMessageOpen', gmailEvent()));
   assert.equal(opened.name, 'home');
-  assert.equal(w.requests.length, 0, 'nothing is sent without a key');
+  assert.equal(w.requests.length, 0, 'nothing is sent before signing in');
+  assert.equal(w.google.tokens, 0, 'no identity token is taken before the click');
 });
 
-test('saving a key checks it with Converter Studio first', () => {
-  const w = world({ user: {} });
-  const bad = w.click(
-    'onSaveSettings',
-    gmailEvent({ inputs: { apiKey: 'cvs_live_' + 'q'.repeat(32), maxCredits: '20' } }),
+test('signed in, the settings show the account: e-mail, plan and credits; the limit is saved', () => {
+  const w = world();
+  const home = cardOf(w.trigger('onHomepage', gmailEvent()));
+  const account = home.sections[1].widgets[0];
+  assert.equal(account.topLabel, 'Signed in as reader@example.com');
+  assert.equal(account.text, 'Plan: pro · 480 credits left');
+  assert.deepEqual(
+    buttons(home).map((b) => b.text),
+    ['Save', 'Sign out', 'Your account', 'Pricing', 'Privacy policy', 'Help'],
   );
-  assert.equal(
-    notificationOf(bad),
-    'This API key does not work. Create one on your account page at converter.studio.',
+  assert.match(
+    home.sections[1].widgets[4].text,
+    /<a href="https:\/\/myaccount\.google\.com\/connections">third-party connections<\/a>/,
   );
-  assert.equal(w.user.getProperty('CS_API_KEY'), null);
-
-  const typo = w.click('onSaveSettings', gmailEvent({ inputs: { apiKey: 'hello' } }));
-  assert.match(notificationOf(typo), /starts with cvs_live_/);
-
-  const ok = w.click(
-    'onSaveSettings',
-    gmailEvent({ inputs: { apiKey: ` ${VALID_KEY} `, maxCredits: '5' } }),
-  );
-  assert.equal(notificationOf(ok), 'Key saved. Plan: pro · 480 credits left');
-  assert.equal(w.user.getProperty('CS_API_KEY'), VALID_KEY);
+  const saved = w.click('onSaveSettings', gmailEvent({ inputs: { maxCredits: '5' } }));
+  assert.equal(notificationOf(saved), 'Settings saved.');
   assert.equal(w.user.getProperty('CS_MAX_CREDITS'), '5');
-  const home = cardOf(ok);
-  assert.match(textOf(home), /API key cvs_live_…O5p6/);
-  assert.ok(!textOf(home).includes(VALID_KEY), 'the key is never shown');
-  assert.ok(button(home, 'Forget my key'));
-
-  const forgot = w.click('onForgetKey', gmailEvent());
-  assert.equal(notificationOf(forgot), 'The API key is forgotten.');
-  assert.equal(w.user.getProperty('CS_API_KEY'), null);
+  const bad = w.click('onSaveSettings', gmailEvent({ inputs: { maxCredits: 'lots' } }));
+  assert.equal(notificationOf(bad), 'The credit limit must be a whole number from 0 to 1000.');
 });
 
 test('opening a message reads nothing; the click lists its attachments', () => {

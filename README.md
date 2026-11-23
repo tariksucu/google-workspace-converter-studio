@@ -16,31 +16,46 @@ update of the add-on.
 
 ## Requirements
 
-- A Google account (Gmail or Google Workspace) that may install add-ons.
-- A Converter Studio account and an API key: sign up at [converter.studio](https://converter.studio/sign-up),
-  then create a key on the [account page](https://converter.studio/account#api-keys). Free accounts get
-  13 credits a day; most photos and documents cost 1 credit; audio and video are priced by their length,
-  and video also by its frame size. See [pricing](https://converter.studio/pricing).
+- A Google account (Gmail or Google Workspace) that may install add-ons. Nothing else: the add-on signs
+  you in to Converter Studio with that Google account, and makes a free Converter Studio account the first
+  time if you have none. Free accounts get 13 credits a day; most photos and documents cost 1 credit; audio
+  and video are priced by their length, and video also by its frame size. See
+  [pricing](https://converter.studio/pricing).
 
 ## Installation
 
 Install **Converter Studio** from the Google Workspace Marketplace, then open Gmail or Google Drive and
 click the Converter Studio icon in the side panel. Google asks you to allow the permissions below once.
 
-## Setup
+## Sign in
 
-Open **Settings** (the add-on's ⋮ menu, or the home card):
+Click **Continue with Google** on the add-on's card. Converter Studio checks Google's sign-in for your
+Google account and uses the Converter Studio account of that Google account, or the one with its e-mail
+address, or makes a free one. It is the same account, plan and credits as on
+[converter.studio](https://converter.studio) and in Converter Studio's apps. By creating an account, you
+agree to the [Terms of Service](https://converter.studio/terms) and the
+[Privacy policy](https://converter.studio/privacy).
 
-| Setting                                                    | What it does                                                                                                                                               |
-| ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **API key**                                                | Your key (`cvs_live_…`). **Save** checks it with Converter Studio first and shows your plan and credits. The key is shown in full only while you paste it. |
-| **Ask before a conversion that costs more than (credits)** | Default 20. A dearer conversion (a long video) waits until you click **Convert for N credits**, and costs nothing until then.                              |
-| **Forget my key**                                          | Deletes the key; the add-on does nothing until a key is added again.                                                                                       |
+The sign-in lasts an hour and renews by itself while you use the add-on. The add-on keeps it in its _user
+properties_ (Apps Script's `PropertiesService`): Google stores it with your Google account for this add-on
+only, other people who use the add-on cannot see it, and only the add-on's own code reads it, while you use
+it. It is sent only to `https://converter.studio/api`, never with an upload or download link.
 
-**Where the key is kept:** in the add-on's _user properties_ (Apps Script's `PropertiesService`): Google
-stores it with your Google account for this add-on only. Other people who use the add-on cannot see it,
-and only the add-on's own code reads it, while you use it. It is sent only to
-`https://converter.studio/api`, never with an upload or download link.
+Renewing never makes an account: if you delete your Converter Studio account, the add-on signs out at
+its next request and makes a new one only when you click **Continue with Google** again.
+
+If your e-mail address already has a Converter Studio account that was never verified, sign in once at
+converter.studio with its password: you get a link to verify it, and then **Continue with Google** works.
+
+## Settings
+
+Open **Settings** (the add-on's ⋮ menu, or the home card). It shows the account you are signed in with,
+its plan and its credits.
+
+| Setting                                                    | What it does                                                                                                                                                                           |
+| ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Ask before a conversion that costs more than (credits)** | Default 20. A dearer conversion (a long video) waits until you click **Convert for N credits**, and costs nothing until then.                                                          |
+| **Sign out**                                               | Forgets the add-on's sign-in; it asks you to sign in again next time. To take away the add-on's access to your Google account, use your Google Account's third-party connections page. |
 
 ## Use
 
@@ -70,15 +85,20 @@ running at Converter Studio: click **Check again** a little later.
 | Only the Google Drive files you use with the add-on     | `drive.file`                          | To open a file you allowed, and to save converted files. No other file is visible. |
 | The name, type and id of the Drive items you select     | `drive.addons.metadata.readonly`      | To show the selected file in the panel.                                            |
 | Connect to an external service                          | `script.external_request`             | To reach Converter Studio (and Drive's own API for the file you allowed).          |
+| Associate you with your personal info on Google         | `openid`                              | To sign you in to Converter Studio with your Google account.                       |
+| See your primary Google Account email address           | `userinfo.email`                      | The e-mail address of your Converter Studio account.                               |
 
-The add-on never asks for full access to your mail or your Drive.
+The add-on never asks for full access to your mail or your Drive, nor for your name or profile picture.
 
 ## Privacy
 
-- Only the files you choose to convert are sent to Converter Studio, over HTTPS, with your API key.
+- Only the files you choose to convert are sent to Converter Studio, over HTTPS, with your sign-in.
   Converter Studio deletes the uploaded file when the conversion finishes and the converted file 6 hours
   later. Your account keeps a short history of your conversions (file names, formats and credits). See
   the [privacy policy](https://converter.studio/privacy).
+- To sign you in, the add-on sends Converter Studio Google's sign-in token for your account (about once an
+  hour while you use it). Converter Studio reads your Google account's id and e-mail address from it (they
+  are what links your Google account to your Converter Studio account) and does not keep the token.
 - The add-on reads no message text, addresses or other messages, collects no statistics and shows no ads.
   Each request names the add-on and its version (the header `X-Converter-Studio-Client`) so Converter
   Studio can count conversions made from Google Workspace.

@@ -5,12 +5,13 @@
  * clicks are called with the event objects Google documents (Event objects reference).
  */
 import { loadAddOn } from '../tools/load.mjs';
-import { VALID_KEY, fakeApi } from './fake-api.mjs';
+import { ADA, AUDIENCE, SESSION, fakeApi } from './fake-api.mjs';
 import {
   fakeCacheService,
   fakeCardService,
   fakeDrive,
   fakeGmail,
+  fakeIdToken,
   fakeProperties,
   fakePropertiesService,
   fakeScriptApp,
@@ -19,8 +20,16 @@ import {
   render,
 } from './fakes.mjs';
 
-export { VALID_KEY, render };
+export { ADA, AUDIENCE, SESSION, render };
 export const TOKEN = 'ya29.fake-oauth-token';
+
+/** The user's properties when signed in with the fake API's starting session. */
+export function signedIn(clock, extra = {}) {
+  return {
+    CS_SESSION: JSON.stringify({ token: SESSION, expiresAt: clock.now + 3600_000 }),
+    ...extra,
+  };
+}
 
 export const bytes = (text) => Buffer.from(text, 'utf8');
 
@@ -133,10 +142,11 @@ export function realClock() {
  * The add-on with its fake Google account.
  * @param {{ messages?: object, driveFiles?: object, user?: object, script?: object, partBytes?: number,
  *   allowlist?: string[], openLinkPrefixes?: string[], network?: (request: object) => object,
- *   clock?: object }} [options]
+ *   clock?: object, identity?: () => string | null }} [options]
  *   `network` replaces the fake Converter Studio API (a run against the real API passes the real
- *   network); Drive's REST
- *   stays fake either way.
+ *   network); Drive's REST stays fake either way. `user`: the user's properties (default: signed
+ *   in). `identity`: Google's identity token for the user (default: one for `w.google.account`,
+ *   issued to AUDIENCE, an hour long).
  */
 export function world(options = {}) {
   const clock = options.clock ?? { now: Date.UTC(2026, 10, 23, 9, 0, 0) };
@@ -144,7 +154,25 @@ export function world(options = {}) {
   const drive = fakeDrive(options.driveFiles ?? defaultDrive(), TOKEN);
   const scope = { phase: 'trigger' };
   const gmail = fakeGmail(options.messages ?? defaultMessages(), scope);
-  const user = fakeProperties(options.user ?? { CS_API_KEY: VALID_KEY });
+  const user = fakeProperties(options.user ?? signedIn(clock));
+  /** The Google account using the add-on; `granted: false` as if `openid` was never allowed. */
+  const google = { account: { ...ADA }, granted: true, tokens: 0 };
+  const identity =
+    options.identity ??
+    (() => {
+      if (!google.granted) return null;
+      google.tokens++;
+      const now = Math.floor(clock.now / 1000);
+      return fakeIdToken({
+        iss: 'https://accounts.google.com',
+        aud: AUDIENCE,
+        sub: google.account.sub,
+        email: google.account.email,
+        email_verified: true,
+        iat: now,
+        exp: now + 3600,
+      });
+    });
   const script = fakeProperties(options.script ?? {});
   const cache = fakeCacheService(clock);
   const net = fakeUrlFetch(
@@ -172,7 +200,7 @@ export function world(options = {}) {
     PropertiesService: fakePropertiesService({ user, script }),
     CacheService: cache.service,
     Utilities: fakeUtilities(clock),
-    ScriptApp: fakeScriptApp(TOKEN),
+    ScriptApp: fakeScriptApp(TOKEN, identity),
     console: { log: log('log'), info: log('info'), warn: log('warn'), error: log('error') },
   });
   // The scripts' clock is the shared one: a 90-second conversion takes no real time.
@@ -189,6 +217,7 @@ export function world(options = {}) {
     api,
     drive,
     gmail,
+    google,
     user,
     script,
     cache,
