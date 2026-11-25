@@ -18,7 +18,7 @@ update of the add-on.
 
 - A Google account (Gmail or Google Workspace) that may install add-ons. Nothing else: the add-on signs
   you in to Converter Studio with that Google account, and makes a free Converter Studio account the first
-  time if you have none. Free accounts get 13 credits a day; most photos and documents cost 1 credit; audio
+  time if you have none. Free accounts get 25 credits a day; most photos and documents cost 1 credit; audio
   and video are priced by their length, and video also by its frame size. See
   [pricing](https://converter.studio/pricing).
 
