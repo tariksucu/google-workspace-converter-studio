@@ -98,7 +98,7 @@ const CsCards = (function () {
       account
         .addWidget(
           paragraph(
-            'Sign in with your Google account to start. A free account gets 13 credits a day; most photos and documents cost 1 credit. If you already have a Converter Studio account with this Google account or its e-mail address, the add-on uses it.',
+            'Sign in with your Google account to start. A free account gets 25 credits a day; most photos and documents cost 1 credit. If you already have a Converter Studio account with this Google account or its e-mail address, the add-on uses it.',
           ),
         )
         .addWidget(signInButton())
